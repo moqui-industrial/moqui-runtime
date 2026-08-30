@@ -1,0 +1,599 @@
+<template>
+<div class="assist-root">
+    <div class="row items-center q-mb-sm q-col-gutter-sm">
+        <div class="col-auto">
+            <q-btn-toggle dense unelevated v-model="writeMode" :options="writeModeOptions"
+                          toggle-color="primary" @input="persistWriteMode"></q-btn-toggle>
+        </div>
+        <div class="col text-caption text-grey-7">{{ writeModeHint }}</div>
+        <div class="col-auto">
+            <q-btn dense outline no-caps :label="chatOnLeft ? 'Chat | Screen' : 'Screen | Chat'"
+                   @click="toggleSide"></q-btn>
+        </div>
+        <div class="col-auto">
+            <q-btn dense outline no-caps label="New session" @click="newSession"></q-btn>
+        </div>
+        <div class="col-auto">
+            <q-btn dense outline no-caps color="negative" label="Cancel" :disable="!streaming" @click="cancelTurn"></q-btn>
+        </div>
+    </div>
+    <q-banner v-if="banner" dense class="bg-warning text-dark q-mb-sm">{{ banner }}</q-banner>
+    <q-splitter v-if="!isMobile" v-model="splitPct" :reverse="!chatOnLeft" style="height: calc(100vh - 140px)">
+        <template v-slot:before>
+            <div class="assist-pane assist-chat q-pa-sm column" style="height:100%">
+                <div class="col overflow-auto" style="min-height:0">
+                    <div v-for="(m, i) in messages" :key="i" class="q-mb-sm">
+                        <div class="text-caption text-grey-7">{{ m.role }}<span v-if="m.name"> {{ m.name }}</span></div>
+                        <div v-if="m.role==='tool'" class="text-caption">{{ m.kind }} {{ m.name }}</div>
+                        <div v-else style="white-space:pre-wrap">{{ m.content }}</div>
+                    </div>
+                </div>
+                <div class="col-auto q-pt-sm">
+                    <q-input id="assist-composer" outlined autogrow v-model="composer" placeholder="Describe what you need"
+                             @keyup.enter.exact.prevent="send" :disable="streaming">
+                        <template v-slot:append>
+                            <q-btn v-if="speechSupported" flat round dense :icon="recognizing ? 'mic' : 'mic_none'"
+                                   @click="toggleMic"></q-btn>
+                            <q-btn id="assist-send" flat round dense icon="send" :disable="streaming || !composer"
+                                   @click="send"></q-btn>
+                        </template>
+                    </q-input>
+                </div>
+            </div>
+        </template>
+        <template v-slot:after>
+            <div class="assist-pane assist-canvas q-pa-sm column" style="height:100%">
+                <div v-if="!schema" class="text-grey-7 q-pa-md">
+                    Describe what you need. Assist will build a screen here.</div>
+                <div v-else class="col overflow-auto">
+                    <div class="text-h6">{{ schema.title }}</div>
+                    <div class="text-body2 q-mb-md">{{ schema.instruction }}</div>
+                    <div v-if="(schema.actions||[]).length" class="q-mb-md">
+                        <div class="text-subtitle2">On submit</div>
+                        <ul class="q-pl-md">
+                            <li v-for="a in schema.actions" :key="a.id">
+                                {{ a.label || a.id }} — {{ a.method }} {{ a.path }}</li>
+                        </ul>
+                    </div>
+                    <div v-if="(schema.columns||[]).length" class="q-mb-md">
+                        <table class="q-table">
+                            <thead><tr>
+                                <th v-for="c in schema.columns" :key="c.name">{{ c.label || c.name }}</th>
+                            </tr></thead>
+                            <tbody>
+                                <tr v-for="(row, ri) in (schema.rows||[])" :key="ri">
+                                    <td v-for="c in schema.columns" :key="c.name">{{ row[c.name] }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div v-for="f in visibleFields" :key="f.name" class="q-mb-sm" :data-field="f.name">
+                        <m-text-line v-if="f.widget==='text-line' || f.widget==='hidden'" dense outlined
+                                     :label="f.label || f.name" :value="fieldValues[f.name]"
+                                     @input="onFieldInput(f.name, $event)"
+                                     :type="f.widget==='hidden' ? 'hidden' : 'text'"
+                                     :name="f.name"
+                                     :tooltip="f.help"></m-text-line>
+                        <q-input v-else-if="f.widget==='text-area'" dense outlined autogrow type="textarea"
+                                 stack-label :label="f.label || f.name" :value="fieldValues[f.name]"
+                                 @input="onFieldInput(f.name, $event)" :hint="f.help" :name="f.name"></q-input>
+                        <q-select v-else-if="f.widget==='drop-down' && (f.options||[]).length" dense outlined emit-value map-options
+                                  :options="f.options || []" option-value="key" option-label="text"
+                                  stack-label :label="f.label || f.name" :value="fieldValues[f.name]"
+                                  @input="onFieldInput(f.name, $event)"></q-select>
+                        <m-text-line v-else-if="f.widget==='drop-down'" dense outlined
+                                     :label="f.label || f.name" :value="fieldValues[f.name]"
+                                     @input="onFieldInput(f.name, $event)" :name="f.name"
+                                     :tooltip="f.help"></m-text-line>
+                        <m-date-time v-else-if="f.widget==='date-time'" :name="f.name" :label="f.label || f.name"
+                                     :type="f.widgetType || 'date-time'" :value="fieldValues[f.name]"
+                                     @input="onFieldInput(f.name, $event)"></m-date-time>
+                        <q-checkbox v-else-if="f.widget==='check'" :label="f.label || f.name"
+                                    :value="fieldValues[f.name]"
+                                    @input="onFieldInput(f.name, $event)"></q-checkbox>
+                        <div v-else class="text-body2"><span class="text-grey-7">{{ f.label || f.name }}:</span> {{ fieldValues[f.name] }}</div>
+                    </div>
+                    <div class="q-gutter-sm q-mt-md">
+                        <q-btn id="assist-submit" unelevated color="primary" no-caps
+                               :label="primaryLabel" :disable="!canSubmitScript || streaming"
+                               @click="submitCanvas(primaryId)"></q-btn>
+                        <q-btn outline no-caps :label="schema.cancelLabel || 'Cancel'"
+                               @click="newSession"></q-btn>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </q-splitter>
+    <q-tabs v-if="isMobile" v-model="mobileTab" dense class="text-primary">
+        <q-tab name="chat" label="Chat"></q-tab>
+        <q-tab name="screen" label="Screen"></q-tab>
+    </q-tabs>
+    <q-tab-panels v-if="isMobile" v-model="mobileTab">
+        <q-tab-panel name="chat" class="q-pa-sm">Use desktop split view for Assist, or rotate to landscape.</q-tab-panel>
+        <q-tab-panel name="screen" class="q-pa-sm">Use desktop split view for Assist, or rotate to landscape.</q-tab-panel>
+    </q-tab-panels>
+</div>
+</template>
+<script>
+/* Assist Universal Screen. First pass: kind=form spec.
+ * FUTURE canvas kinds (leave the renderer switch here):
+ *  - screen-xml: POST schema.xml to a screen transition that compiles/renders XML (server round-trip)
+ *  - vue-sfc: httpVueLoader.parse(script + template + style) as a dynamic component
+ */
+function parseSseChunk(buffer, onEvent) {
+    var parts = buffer.split('\n\n');
+    var rest = parts.pop();
+    for (var i = 0; i < parts.length; i++) {
+        var block = parts[i];
+        if (!block || !block.trim()) continue;
+        var event = 'message', data = '';
+        var lines = block.split('\n');
+        for (var j = 0; j < lines.length; j++) {
+            var line = lines[j];
+            if (line.indexOf('event:') === 0) event = line.slice(6).trim();
+            else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+        }
+        var parsed = data;
+        try { parsed = JSON.parse(data); } catch (e) { /* keep string */ }
+        onEvent(event, parsed);
+    }
+    return rest;
+}
+function validateActionPath(path) {
+    if (!path || path.charAt(0) !== '/') return 'path must start with /';
+    if (path.indexOf('://') >= 0 || path.indexOf('//') === 0) return 'path must not contain a host';
+    if (path.indexOf('..') >= 0) return 'path must not contain ..';
+    return null;
+}
+function unescapeHtml(s) {
+    if (s == null || s === '') return s;
+    return String(s).replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+}
+function scalarValue(v) {
+    if (v == null) return '';
+    if (typeof v === 'object') {
+        if (v.value != null && typeof v.value !== 'object') return unescapeHtml(String(v.value));
+        var keys = Object.keys(v);
+        if (keys.length === 1 && typeof v[keys[0]] !== 'object') return unescapeHtml(String(v[keys[0]]));
+        return '';
+    }
+    return unescapeHtml(String(v));
+}
+function subst(str, bag) {
+    if (!str || !bag) return str;
+    return String(str).replace(/\{([a-zA-Z0-9_.]+)\}/g, function(m, k) {
+        return bag[k] != null ? bag[k] : m;
+    });
+}
+
+module.exports = {
+    data: function() {
+        return {
+            chatOnLeft: true, writeMode: 'script', splitPct: 40,
+            mobileTab: 'chat',
+            composer: '', streaming: false, banner: '',
+            conversationId: null, canvasId: null,
+            messages: [], pendingToolCalls: [],
+            schema: null, fieldValues: {}, dirtyFields: {},
+            speechSupported: false, recognizing: false,
+            recognition: null, abortCtl: null,
+            conversations: [], profileFlags: {}
+        };
+    },
+    computed: {
+        isMobile: function() {
+            return (window.innerWidth && window.innerWidth <= 600) ||
+                (window.Quasar && Quasar.Platform && Quasar.Platform.is && Quasar.Platform.is.mobile);
+        },
+        writeModeOptions: function() {
+            return [
+                { label: 'Script', value: 'script' },
+                { label: 'Agent', value: 'agent' }
+            ];
+        },
+        writeModeHint: function() {
+            return this.writeMode === 'script'
+                ? 'This screen runs the listed actions when you click.'
+                : 'Assist runs the listed actions after you click.';
+        },
+        llmBase: function() {
+            var root = (this.$root && this.$root.appRootPath) || '';
+            return root + '/llm/v1';
+        },
+        csrf: function() { return (this.$root && this.$root.moquiSessionToken) || ''; },
+        canSubmitScript: function() {
+            var acts = this.schema && this.schema.actions;
+            return this.writeMode !== 'script' || (acts && acts.length);
+        },
+        visibleFields: function() {
+            var fields = (this.schema && this.schema.fields) || [];
+            return fields.filter(function(f) { return f && f.widget !== 'hidden'; });
+        },
+        primaryLabel: function() {
+            var s = this.schema || {};
+            var acts = s.actions || [];
+            var p = acts.filter(function(a) { return a.primary; })[0];
+            return unescapeHtml((p && p.label) || s.submitLabel || 'Submit');
+        },
+        primaryId: function() {
+            var acts = (this.schema && this.schema.actions) || [];
+            var p = acts.filter(function(a) { return a.primary; })[0];
+            return (p && p.id) || (acts[0] && acts[0].id) || 'submit';
+        }
+    },
+    methods: {
+        persistPref: function(key, value) {
+            $.ajax({ type: 'POST', url: (this.$root.appRootPath + '/apps/setPreference'),
+                data: { moquiSessionToken: this.csrf, preferenceKey: key, preferenceValue: value },
+                error: moqui.handleAjaxError });
+        },
+        persistWriteMode: function() { this.persistPref('ASSIST_WRITE_MODE', this.writeMode); },
+        toggleSide: function() {
+            this.chatOnLeft = !this.chatOnLeft;
+            this.persistPref('ASSIST_CHAT_SIDE', this.chatOnLeft ? 'left' : 'right');
+        },
+        newSession: function() {
+            this.cancelTurn();
+            this.conversationId = null;
+            this.canvasId = 'c' + Date.now();
+            this.messages = [];
+            this.pendingToolCalls = [];
+            this.schema = null;
+            this.fieldValues = {};
+            this.dirtyFields = {};
+            this.banner = '';
+        },
+        loadPrefs: function() {
+            var vm = this;
+            $.ajax({ type: 'GET', url: (this.$root.appRootPath + '/apps/getPreferences'),
+                data: { keyRegexp: 'ASSIST_' }, dataType: 'json',
+                success: function(prefs) {
+                    if (!prefs) return;
+                    if (prefs.ASSIST_CHAT_SIDE === 'right') vm.chatOnLeft = false;
+                    if (prefs.ASSIST_WRITE_MODE === 'agent' || prefs.ASSIST_WRITE_MODE === 'script')
+                        vm.writeMode = prefs.ASSIST_WRITE_MODE;
+                } });
+        },
+        loadProfiles: function() {
+            var vm = this;
+            fetch(this.llmBase + '/profiles', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+                .then(function(r) { return r.json(); })
+                .then(function(body) {
+                    var list = (body && body.profiles) || [];
+                    var assist = list.filter(function(p) { return p.name === 'assist'; })[0] || list[0];
+                    vm.profileFlags = assist || {};
+                    if (assist && assist.allowUnprefixedRequest === false && assist.allowBrowse === false)
+                        vm.banner = 'Assist profile tools are limited; browse/request may be unavailable.';
+                }).catch(function() { /* ignore */ });
+        },
+        loadConversations: function() {
+            var vm = this;
+            fetch(this.llmBase + '/conversations?profile=assist&purpose=assist',
+                { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+                .then(function(r) { return r.json(); })
+                .then(function(body) { vm.conversations = (body && body.conversations) || []; })
+                .catch(function() { vm.conversations = []; });
+        },
+        send: function() {
+            var text = (this.composer || '').trim();
+            if (!text || this.streaming) return;
+            this.composer = '';
+            this.messages.push({ role: 'user', content: text });
+            if (this.pendingToolCalls.length) this.resumeChat(text);
+            else this.chat(text);
+        },
+        toolNames: function() { return ['browse', 'request', 'write_ui', 'run_service']; },
+        headers: function(stream) {
+            var h = { 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrf, Accept: stream ? 'text/event-stream' : 'application/json' };
+            return h;
+        },
+        chat: function(text) {
+            var body = { profile: 'assist', purpose: 'assist', canvasId: this.canvasId,
+                user: text, tools: this.toolNames(), stream: true };
+            if (this.conversationId) body.conversationId = this.conversationId;
+            this.runSse(this.llmBase + '/chat', body);
+        },
+        resumeChat: function(text) {
+            var pending = this.pendingToolCalls[0];
+            if (!pending) { this.chat(text); return; }
+            var content = this.writeUiResult(false, null);
+            content.userMessage = text;
+            var body = { profile: 'assist', tools: this.toolNames(), user: text, stream: true,
+                toolResults: [{ id: pending.id, name: pending.name || 'write_ui', content: content }] };
+            this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
+        },
+        writeUiResult: function(submitted, button) {
+            return {
+                submitted: !!submitted,
+                mode: this.writeMode,
+                button: button || null,
+                values: Object.assign({}, this.fieldValues),
+                actions: (this.schema && this.schema.actions) || [],
+                canvas: this.currentCanvas()
+            };
+        },
+        currentCanvas: function() {
+            var schema = this.schema ? JSON.parse(JSON.stringify(this.schema)) : null;
+            if (!schema) return null;
+            var vals = this.fieldValues;
+            var fields = schema.fields || [];
+            for (var i = 0; i < fields.length; i++) {
+                var n = fields[i].name;
+                if (n && Object.prototype.hasOwnProperty.call(vals, n)) fields[i].defaultValue = vals[n];
+            }
+            return schema;
+        },
+        applySchema: function(schema) {
+            if (!schema) return;
+            var prevDirty = Object.assign({}, this.dirtyFields);
+            var prevVals = Object.assign({}, this.fieldValues);
+            schema.title = unescapeHtml(schema.title);
+            schema.instruction = unescapeHtml(schema.instruction);
+            schema.submitLabel = unescapeHtml(schema.submitLabel);
+            var acts = schema.actions || [];
+            for (var ai = 0; ai < acts.length; ai++) if (acts[ai] && acts[ai].label)
+                acts[ai].label = unescapeHtml(acts[ai].label);
+            var flds = schema.fields || [];
+            for (var fi = 0; fi < flds.length; fi++) if (flds[fi] && flds[fi].label)
+                flds[fi].label = unescapeHtml(flds[fi].label);
+            this.schema = schema;
+            var next = {};
+            var fields = schema.fields || [];
+            for (var i = 0; i < fields.length; i++) {
+                var f = fields[i];
+                if (!f || !f.name) continue;
+                if (prevDirty[f.name]) next[f.name] = prevVals[f.name];
+                else next[f.name] = scalarValue(f.defaultValue);
+            }
+            this.fieldValues = next;
+            this.dirtyFields = prevDirty;
+        },
+        onFieldInput: function(name, value) {
+            this.$set(this.fieldValues, name, value);
+            this.$set(this.dirtyFields, name, true);
+        },
+        submitCanvas: function(buttonId) {
+            if (this.streaming) return;
+            if (this.writeMode === 'script' && !this.canSubmitScript) {
+                this.banner = 'No scripted actions on this screen. Switch to Agent or wait for actions.';
+                return;
+            }
+            var vm = this;
+            this.banner = this.writeMode === 'script'
+                ? 'Running listed actions…' : 'Submitted — Assist is working…';
+            if (this.writeMode === 'script') {
+                this.runScriptActions().then(function(actionResults) {
+                    vm.banner = 'Actions finished; Assist is reviewing results…';
+                    vm.finishSubmit(buttonId, actionResults);
+                }).catch(function(err) {
+                    vm.banner = (err && err.message) || String(err);
+                    vm.finishSubmit(buttonId, err.actionResults || []);
+                });
+            } else {
+                this.finishSubmit(buttonId, []);
+            }
+        },
+        finishSubmit: function(buttonId, actionResults) {
+            var pending = this.pendingToolCalls[0];
+            if (!pending || !this.conversationId) {
+                this.banner = 'Nothing to submit (no yielded form).';
+                return;
+            }
+            var content = this.writeUiResult(true, buttonId);
+            content.actionResults = actionResults || [];
+            var body = { profile: 'assist', tools: this.toolNames(), stream: true,
+                toolResults: [{ id: pending.id, name: pending.name || 'write_ui', content: content }] };
+            this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
+        },
+        runScriptActions: function() {
+            var vm = this;
+            var actions = (this.schema && this.schema.actions) || [];
+            var bag = Object.assign({}, this.fieldValues);
+            var results = [];
+            var failed = {};
+            function next(i) {
+                if (i >= actions.length) return Promise.resolve(results);
+                var act = actions[i] || {};
+                var deps = act.dependsOn || [];
+                for (var d = 0; d < deps.length; d++) {
+                    if (failed[deps[d]]) {
+                        results.push({ id: act.id, skipped: true, reason: 'dependency failed: ' + deps[d] });
+                        return next(i + 1);
+                    }
+                }
+                var pathErr = validateActionPath(act.path);
+                if (pathErr) {
+                    failed[act.id] = true;
+                    results.push({ id: act.id, error: pathErr });
+                    return Promise.reject({ message: pathErr, actionResults: results });
+                }
+                var path = subst(act.path, bag);
+                var method = (act.method || 'POST').toUpperCase();
+                var bodyObj = {};
+                var keys = act.bodyFromFields || Object.keys(vm.fieldValues);
+                for (var k = 0; k < keys.length; k++) {
+                    var key = keys[k];
+                    if (bag[key] != null) bodyObj[key] = bag[key];
+                }
+                var bind = act.bind || [];
+                for (var b = 0; b < bind.length; b++) if (bag[bind[b]] != null) bodyObj[bind[b]] = bag[bind[b]];
+                var url = ((vm.$root && vm.$root.appRootPath) || '') + path;
+                var init = { method: method, credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-CSRF-Token': vm.csrf } };
+                if (method !== 'GET' && method !== 'HEAD') {
+                    init.headers['Content-Type'] = 'application/json';
+                    init.body = JSON.stringify(bodyObj);
+                } else {
+                    var q = [];
+                    var qf = act.queryFromFields || [];
+                    for (var qi = 0; qi < qf.length; qi++) {
+                        var qk = qf[qi];
+                        if (bag[qk] != null) q.push(encodeURIComponent(qk) + '=' + encodeURIComponent(bag[qk]));
+                    }
+                    if (q.length) url += (url.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
+                }
+                return fetch(url, init).then(function(r) {
+                    return r.text().then(function(txt) {
+                        var parsed = txt;
+                        try { parsed = JSON.parse(txt); } catch (e) { /* keep */ }
+                        var row = { id: act.id, status: r.status, body: parsed };
+                        results.push(row);
+                        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                            Object.keys(parsed).forEach(function(pk) { bag[pk] = parsed[pk]; });
+                        }
+                        if (r.status >= 400) {
+                            failed[act.id] = true;
+                            var err = new Error((act.label || act.id) + ' failed: ' + r.status);
+                            err.actionResults = results;
+                            throw err;
+                        }
+                        return next(i + 1);
+                    });
+                });
+            }
+            return next(0);
+        },
+        runSse: function(url, body) {
+            var vm = this;
+            this.streaming = true;
+            this.banner = '';
+            this.abortCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            var assistant = { role: 'assistant', content: '' };
+            this.messages.push(assistant);
+            fetch(url, {
+                method: 'POST', credentials: 'same-origin',
+                headers: this.headers(true),
+                body: JSON.stringify(body),
+                signal: this.abortCtl ? this.abortCtl.signal : undefined
+            }).then(function(resp) {
+                if (!resp.ok && resp.status !== 200) {
+                    return resp.json().catch(function() { return {}; }).then(function(err) {
+                        throw new Error(err.message || ('HTTP ' + resp.status));
+                    });
+                }
+                if (!resp.body || !resp.body.getReader) {
+                    return resp.json().then(function(j) { vm.handleJsonTurn(j, assistant); });
+                }
+                var reader = resp.body.getReader();
+                var decoder = new TextDecoder('utf-8');
+                var buf = '';
+                function pump() {
+                    return reader.read().then(function(chunk) {
+                        if (chunk.done) { vm.streaming = false; return; }
+                        buf += decoder.decode(chunk.value, { stream: true });
+                        buf = parseSseChunk(buf, function(event, data) { vm.onSse(event, data, assistant); });
+                        return pump();
+                    });
+                }
+                return pump();
+            }).catch(function(err) {
+                vm.streaming = false;
+                if (err && err.name === 'AbortError') return;
+                vm.banner = (err && err.message) || String(err);
+                assistant.content = assistant.content || vm.banner;
+            });
+        },
+        onSse: function(event, data, assistant) {
+            if (event === 'conversation' && data && data.conversationId) {
+                var first = !this.conversationId;
+                this.conversationId = data.conversationId;
+                if (first) this.maybeTitle();
+            } else if (event === 'delta' && data && data.content) {
+                assistant.content = (assistant.content || '') + data.content;
+            } else if (event === 'tool_call') {
+                this.messages.push({ role: 'tool', kind: 'call', name: data && data.name, arguments: data && data.arguments });
+            } else if (event === 'tool_result') {
+                this.messages.push({ role: 'tool', kind: 'result', name: data && data.name, content: data && data.content });
+            } else if (event === 'yield') {
+                this.pendingToolCalls = (data && data.pendingToolCalls) || [];
+                var call = this.pendingToolCalls[0];
+                var args = call && call.arguments;
+                if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = null; } }
+                if (args && (args.fields || args.columns || args.kind === 'form')) this.applySchema(args);
+                // FUTURE: args.kind === 'screen-xml' → POST to a compile/render transition (server round-trip)
+                // FUTURE: args.kind === 'vue-sfc' → httpVueLoader.parse(template+script+style)
+                this.streaming = false;
+            } else if (event === 'done') {
+                this.streaming = false;
+                if (data && !data.yielded) this.pendingToolCalls = [];
+            } else if (event === 'error') {
+                this.streaming = false;
+                this.banner = (data && data.message) || 'LLM error';
+            }
+        },
+        handleJsonTurn: function(j, assistant) {
+            this.streaming = false;
+            if (j.conversationId) this.conversationId = j.conversationId;
+            if (j.content) assistant.content = j.content;
+            if (j.yielded && j.pendingToolCalls) {
+                this.pendingToolCalls = j.pendingToolCalls;
+                var call = this.pendingToolCalls[0];
+                var args = call && call.arguments;
+                if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = null; } }
+                if (args && (args.fields || args.columns || args.kind === 'form')) this.applySchema(args);
+            }
+        },
+        maybeTitle: function() {
+            if (!this.conversationId) return;
+            var first = this.messages.filter(function(m) { return m.role === 'user'; })[0];
+            if (!first || !first.content) return;
+            var title = first.content.length > 80 ? first.content.slice(0, 77) + '...' : first.content;
+            $.ajax({ type: 'POST', url: 'setTitle', dataType: 'json',
+                data: { moquiSessionToken: this.csrf, conversationId: this.conversationId, title: title } });
+        },
+        cancelTurn: function() {
+            if (this.abortCtl) try { this.abortCtl.abort(); } catch (e) { /* ignore */ }
+            this.streaming = false;
+            if (!this.conversationId) return;
+            fetch(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/cancel', {
+                method: 'POST', credentials: 'same-origin',
+                headers: this.headers(false), body: '{}'
+            }).catch(function() { /* ignore */ });
+        },
+        setupSpeech: function() {
+            var Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+            this.speechSupported = !!Rec;
+            if (!Rec) return;
+            var rec = new Rec();
+            rec.lang = (navigator.language || 'en-US');
+            rec.interimResults = false;
+            var vm = this;
+            rec.onresult = function(ev) {
+                var t = ev.results && ev.results[0] && ev.results[0][0] && ev.results[0][0].transcript;
+                if (t) vm.composer = (vm.composer ? vm.composer + ' ' : '') + t;
+            };
+            rec.onend = function() { vm.recognizing = false; };
+            this.recognition = rec;
+        },
+        toggleMic: function() {
+            if (!this.recognition) return;
+            if (this.recognizing) { this.recognition.stop(); this.recognizing = false; }
+            else { this.recognition.start(); this.recognizing = true; }
+        },
+        widgetComponent: function(widget) {
+            if (widget === 'text-area') return 'q-input';
+            if (widget === 'drop-down') return 'q-select';
+            if (widget === 'date-time') return 'm-date-time';
+            if (widget === 'display' || widget === 'display-entity') return 'div';
+            return 'm-text-line';
+        }
+    },
+    mounted: function() {
+        this.canvasId = 'c' + Date.now();
+        this.loadPrefs();
+        this.loadProfiles();
+        this.loadConversations();
+        this.setupSpeech();
+    },
+    beforeDestroy: function() {
+        this.cancelTurn();
+        if (this.recognition && this.recognizing) try { this.recognition.stop(); } catch (e) { /* ignore */ }
+    }
+};
+</script>
+<style>
+.assist-root { min-height: 60vh; }
+.assist-pane { height: 100%; overflow: hidden; }
+.assist-chat { border-right: 1px solid rgba(0,0,0,0.08); }
+</style>
