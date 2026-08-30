@@ -55,7 +55,14 @@
                                 {{ a.label || a.id }} — {{ a.method }} {{ a.path }}</li>
                         </ul>
                     </div>
-                    <div v-if="(schema.columns||[]).length" class="q-mb-md">
+                    <div v-if="showVueSfc" class="q-mb-md">
+                        <component :is="vueSfcComp" :key="vueSfcKey"
+                                   :values="fieldValues" :schema="schema" :mode="writeMode"
+                                   @input="onSfcInput" @submit="onSfcSubmit" @cancel="newSession"></component>
+                    </div>
+                    <div v-else-if="schema.kind==='vue-sfc' && !vueSfcFailed" class="text-grey-7 q-mb-md">
+                        Loading generated screen…</div>
+                    <div v-if="showFormWidgets && (schema.columns||[]).length" class="q-mb-md">
                         <table class="q-table">
                             <thead><tr>
                                 <th v-for="c in schema.columns" :key="c.name">{{ c.label || c.name }}</th>
@@ -67,7 +74,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <div v-for="f in visibleFields" :key="f.name" class="q-mb-sm" :data-field="f.name">
+                    <div v-if="showFormWidgets" v-for="f in visibleFields" :key="f.name" class="q-mb-sm" :data-field="f.name">
                         <m-text-line v-if="f.widget==='text-line' || f.widget==='hidden'" dense outlined
                                      :label="f.label || f.name" :value="fieldValues[f.name]"
                                      @input="onFieldInput(f.name, $event)"
@@ -115,10 +122,8 @@
 </div>
 </template>
 <script>
-/* Assist Universal Screen. First pass: kind=form spec.
- * FUTURE canvas kinds (leave the renderer switch here):
- *  - screen-xml: POST schema.xml to a screen transition that compiles/renders XML (server round-trip)
- *  - vue-sfc: httpVueLoader.parse(script + template + style) as a dynamic component
+/* Assist Universal Screen. Canvas kinds: form spec, vue-sfc (httpVueLoader.parse).
+ * FUTURE: screen-xml POST to a compile/render transition (server round-trip).
  */
 function parseSseChunk(buffer, onEvent) {
     var parts = buffer.split('\n\n');
@@ -166,6 +171,72 @@ function subst(str, bag) {
         return bag[k] != null ? bag[k] : m;
     });
 }
+function stripSfcFences(s) {
+    if (s == null) return s;
+    var t = String(s).trim();
+    if (t.indexOf('```') === 0) {
+        var nl = t.indexOf('\n');
+        if (nl > 0) t = t.slice(nl + 1);
+        if (t.slice(-3) === '```') t = t.slice(0, -3);
+        t = t.trim();
+    }
+    return t;
+}
+function startsWithTag(s, tag) {
+    if (!s) return false;
+    var t = String(s).trim();
+    return t.charAt(0) === '<' && t.slice(1, 1 + tag.length).toLowerCase() === tag;
+}
+function assembleSfc(schema) {
+    if (!schema) return '';
+    if (schema.sfc) return stripSfcFences(schema.sfc);
+    var template = schema.template, script = schema.script, style = schema.style;
+    if (!template && !script && !style) return '';
+    var parts = [];
+    if (template) {
+        var t = String(template).trim();
+        parts.push(startsWithTag(t, 'template') ? t : '<template>\n' + template + '\n</template>');
+    }
+    var scriptClose = '<' + '/script>';
+    if (script) {
+        var sc = String(script).trim();
+        parts.push(startsWithTag(sc, 'script') ? sc : '<script>\n' + script + '\n' + scriptClose);
+    } else parts.push('<script>\nmodule.exports = {}\n' + scriptClose);
+    if (style) {
+        var st = String(style).trim();
+        parts.push(startsWithTag(st, 'style') ? st : '<style>\n' + style + '\n</style>');
+    }
+    return parts.join('\n');
+}
+function hashString(s) {
+    var h = 0;
+    if (!s) return '0';
+    for (var i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i) | 0;
+    return String(h);
+}
+function isWriteUiArgs(args) {
+    return !!(args && (args.fields || args.columns || args.sfc || args.template
+            || args.kind === 'form' || args.kind === 'vue-sfc'));
+}
+function ensureSfcProps(comp) {
+    if (!comp) return comp;
+    var base = {
+        values: { type: Object, 'default': function() { return {}; } },
+        schema: { type: Object },
+        mode: { type: String }
+    };
+    if (!comp.props) { comp.props = base; return comp; }
+    if (Array.isArray(comp.props)) {
+        ['values', 'schema', 'mode'].forEach(function(p) {
+            if (comp.props.indexOf(p) < 0) comp.props.push(p);
+        });
+        return comp;
+    }
+    if (!comp.props.values) comp.props.values = base.values;
+    if (!comp.props.schema) comp.props.schema = base.schema;
+    if (!comp.props.mode) comp.props.mode = base.mode;
+    return comp;
+}
 
 module.exports = {
     data: function() {
@@ -176,6 +247,7 @@ module.exports = {
             conversationId: null, canvasId: null,
             messages: [], pendingToolCalls: [],
             schema: null, fieldValues: {}, dirtyFields: {},
+            vueSfcComp: null, vueSfcKey: null, vueSfcGen: 0, vueSfcFailed: false,
             speechSupported: false, recognizing: false,
             recognition: null, abortCtl: null,
             conversations: [], profileFlags: {}
@@ -220,6 +292,14 @@ module.exports = {
             var acts = (this.schema && this.schema.actions) || [];
             var p = acts.filter(function(a) { return a.primary; })[0];
             return (p && p.id) || (acts[0] && acts[0].id) || 'submit';
+        },
+        showVueSfc: function() {
+            return !!(this.vueSfcComp && this.schema && this.schema.kind === 'vue-sfc');
+        },
+        showFormWidgets: function() {
+            if (!this.schema || this.showVueSfc) return false;
+            if (this.schema.kind === 'vue-sfc') return this.vueSfcFailed;
+            return true;
         }
     },
     methods: {
@@ -242,6 +322,10 @@ module.exports = {
             this.schema = null;
             this.fieldValues = {};
             this.dirtyFields = {};
+            this.vueSfcComp = null;
+            this.vueSfcKey = null;
+            this.vueSfcFailed = false;
+            this.vueSfcGen = (this.vueSfcGen || 0) + 1;
             this.banner = '';
         },
         loadPrefs: function() {
@@ -338,6 +422,7 @@ module.exports = {
             for (var fi = 0; fi < flds.length; fi++) if (flds[fi] && flds[fi].label)
                 flds[fi].label = unescapeHtml(flds[fi].label);
             this.schema = schema;
+            if (schema.sfcError) this.banner = schema.sfcError;
             var next = {};
             var fields = schema.fields || [];
             for (var i = 0; i < fields.length; i++) {
@@ -346,8 +431,89 @@ module.exports = {
                 if (prevDirty[f.name]) next[f.name] = prevVals[f.name];
                 else next[f.name] = scalarValue(f.defaultValue);
             }
+            Object.keys(prevVals).forEach(function(k) {
+                if (!Object.prototype.hasOwnProperty.call(next, k)) next[k] = prevVals[k];
+            });
             this.fieldValues = next;
             this.dirtyFields = prevDirty;
+        },
+        applyYield: function(args) {
+            if (!args) return;
+            this.applySchema(args);
+            if (args.kind === 'vue-sfc') this.loadVueSfc(args);
+            else {
+                this.vueSfcGen = (this.vueSfcGen || 0) + 1;
+                this.vueSfcComp = null;
+                this.vueSfcKey = null;
+                this.vueSfcFailed = false;
+            }
+        },
+        loadVueSfc: function(schema) {
+            var vm = this;
+            var text = assembleSfc(schema);
+            if (!text || text.toLowerCase().indexOf('<template') < 0) {
+                this.vueSfcGen = (this.vueSfcGen || 0) + 1;
+                if (!this.vueSfcComp) this.vueSfcFailed = true;
+                if (schema && schema.sfcError && !this.banner) this.banner = schema.sfcError;
+                return;
+            }
+            var key = hashString(text);
+            if (key === this.vueSfcKey && this.vueSfcComp) { this.vueSfcFailed = false; return; }
+            if (typeof httpVueLoader === 'undefined' || !httpVueLoader.parse) {
+                this.banner = 'Generated screen failed to compile: httpVueLoader is not available';
+                if (!this.vueSfcComp) this.vueSfcFailed = true;
+                return;
+            }
+            this.vueSfcFailed = false;
+            this.vueSfcGen = (this.vueSfcGen || 0) + 1;
+            var gen = this.vueSfcGen;
+            var parsed;
+            try { parsed = httpVueLoader.parse(text, ''); }
+            catch (e) {
+                this.banner = 'Generated screen failed to compile: ' + ((e && e.message) || String(e));
+                if (!this.vueSfcComp) this.vueSfcFailed = true;
+                return;
+            }
+            Promise.resolve(typeof parsed === 'function' ? parsed() : parsed).then(function(comp) {
+                if (gen !== vm.vueSfcGen) return;
+                if (!comp || !comp.template) {
+                    vm.banner = 'Generated screen failed to compile: missing template';
+                    if (!vm.vueSfcComp) vm.vueSfcFailed = true;
+                    return;
+                }
+                vm.vueSfcComp = ensureSfcProps(comp);
+                vm.vueSfcKey = key;
+                vm.vueSfcFailed = false;
+            }).catch(function(err) {
+                if (gen !== vm.vueSfcGen) return;
+                vm.banner = 'Generated screen failed to compile: ' + ((err && err.message) || String(err));
+                if (!vm.vueSfcComp) vm.vueSfcFailed = true;
+            });
+        },
+        onSfcInput: function(payload) {
+            if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) return;
+            if (payload.name != null && Object.prototype.hasOwnProperty.call(payload, 'value')
+                    && Object.keys(payload).length <= 3)
+                this.onFieldInput(payload.name, payload.value);
+            else {
+                var vm = this;
+                Object.keys(payload).forEach(function(k) {
+                    if (k === 'name' || k === 'button') return;
+                    vm.onFieldInput(k, payload[k]);
+                });
+                if (payload.name != null && payload.value !== undefined && !Object.prototype.hasOwnProperty.call(payload, payload.name))
+                    this.onFieldInput(payload.name, payload.value);
+            }
+        },
+        onSfcSubmit: function(payload) {
+            var button = this.primaryId;
+            if (payload && typeof payload === 'object') {
+                if (payload.button) button = payload.button;
+                if (payload.values && typeof payload.values === 'object') this.onSfcInput(payload.values);
+                else if (payload.name != null && Object.prototype.hasOwnProperty.call(payload, 'value'))
+                    this.onSfcInput(payload);
+            }
+            this.submitCanvas(button);
         },
         onFieldInput: function(name, value) {
             this.$set(this.fieldValues, name, value);
@@ -510,9 +676,8 @@ module.exports = {
                 var call = this.pendingToolCalls[0];
                 var args = call && call.arguments;
                 if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = null; } }
-                if (args && (args.fields || args.columns || args.kind === 'form')) this.applySchema(args);
+                if (isWriteUiArgs(args)) this.applyYield(args);
                 // FUTURE: args.kind === 'screen-xml' → POST to a compile/render transition (server round-trip)
-                // FUTURE: args.kind === 'vue-sfc' → httpVueLoader.parse(template+script+style)
                 this.streaming = false;
             } else if (event === 'done') {
                 this.streaming = false;
@@ -531,7 +696,7 @@ module.exports = {
                 var call = this.pendingToolCalls[0];
                 var args = call && call.arguments;
                 if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = null; } }
-                if (args && (args.fields || args.columns || args.kind === 'form')) this.applySchema(args);
+                if (isWriteUiArgs(args)) this.applyYield(args);
             }
         },
         maybeTitle: function() {
