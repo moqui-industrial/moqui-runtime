@@ -12,10 +12,10 @@
 
     <!-- Local LM Studio (OpenAI-compatible) for Assist / LlmClient testing -->
     <default-property name="llm_openai_url" value="http://127.0.0.1:1234"/>
-    <default-property name="llm_openai_model" value="qwen3.8-27b-nvfp4-mtp"/>
+    <default-property name="llm_openai_model" value="ornith-1.5-35b-a3b@q4_k_l"/>
     <llm-facade>
-        <profile name="assist" timeout-seconds="600" max-iterations="12"/>
-        <profile name="default" timeout-seconds="600"/>
+        <profile name="assist" timeout-seconds="900" max-iterations="32"/>
+        <profile name="default" timeout-seconds="900"/>
     </llm-facade>
 
     <!-- minimal overrides for testing on local mysql8:
