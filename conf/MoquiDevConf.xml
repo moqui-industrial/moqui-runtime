@@ -12,8 +12,9 @@
 
     <!-- Local LM Studio (OpenAI-compatible) for Assist / LlmClient testing -->
     <default-property name="llm_openai_url" value="http://127.0.0.1:1234"/>
-    <default-property name="llm_openai_model" value="ornith-1.5-35b-a3b@q4_k_l"/>
+    <default-property name="llm_openai_model" value=""/>
     <llm-facade>
+        <!-- For the assist profile timeout-seconds and max-iterations need to be somewhat high for skill learning R&D loops -->
         <profile name="assist" timeout-seconds="900" max-iterations="32"/>
         <profile name="default" timeout-seconds="900"/>
     </llm-facade>
@@ -58,7 +59,7 @@
 
         <cache name="l10n.message" expire-time-idle="600"/>
     </cache-list>
-    
+
     <server-stats stats-skip-condition="pathInfo?.startsWith('/rpc') || pathInfo?.startsWith('/rest') || pathInfo?.startsWith('/status')">
         <!-- For development, track everything! It'll run slow through... -->
         <artifact-stats type="AT_XML_SCREEN" persist-bin="true" persist-hit="true"/>
