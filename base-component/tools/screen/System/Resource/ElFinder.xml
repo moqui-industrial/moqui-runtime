@@ -24,7 +24,7 @@ along with this software (see the LICENSE.md file). If not, see
     </always-actions>
 
     <!-- set read-only=true because in spite of setting requestType:'post' some requests come as gets -->
-    <transition name="command" read-only="true">
+    <transition name="command" read-only="true" authz-action="all">
         <actions>
             <!-- <log level="warn" message="============ resourceRoot=${resourceRoot}, ec.web.parameters=${ec.web.parameters}"/> -->
             <service-call name="org.moqui.impl.ElFinderServices.run#Command" out-map="context"

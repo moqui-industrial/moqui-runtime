@@ -16,7 +16,7 @@ along with this software (see the LICENSE.md file). If not, see
         xsi:noNamespaceSchemaLocation="http://moqui.org/xsd/xml-screen-3.xsd"
         default-menu-title="Snapshots">
 
-    <transition name="exportSnapshot" begin-transaction="false">
+    <transition name="exportSnapshot" begin-transaction="false" authz-action="update">
         <actions>
             <script><![CDATA[
                 if (!entitiesToInclude) entitiesToInclude = null
@@ -37,18 +37,18 @@ along with this software (see the LICENSE.md file). If not, see
         <actions><script>ec.web.sendResourceResponse("db/snapshot/" + filename)</script></actions>
         <default-response type="none"/>
     </transition>
-    <transition name="deleteSnapshot" begin-transaction="false">
+    <transition name="deleteSnapshot" begin-transaction="false" authz-action="update">
         <actions><script>ec.resource.getLocationReference("db/snapshot/" + filename).delete()</script></actions>
         <default-response url="."/>
     </transition>
-    <transition name="importSnapshot" begin-transaction="false">
+    <transition name="importSnapshot" begin-transaction="false" authz-action="update">
         <actions>
             <script>jobRunId = ec.service.job("ImportEntityDataSnapshot").parameters(context).run()</script>
             <message>Started Import Entity Data Snapshot ${filename} (Job ID ${jobRunId})</message>
         </actions>
         <default-response url="."/>
     </transition>
-    <transition name="uploadSnapshot" begin-transaction="false">
+    <transition name="uploadSnapshot" begin-transaction="false" authz-action="update">
         <actions><script><![CDATA[
             String filename = snapshotFile.getName()
             if (!filename.endsWith(".zip")) { ec.message.addError("File ${filename} is not a zip file, should be a zip containing one or more xml data files"); return; }
@@ -60,7 +60,7 @@ along with this software (see the LICENSE.md file). If not, see
         ]]></script></actions>
         <default-response url="."/>
     </transition>
-    <transition name="dropForeignKeys" begin-transaction="false">
+    <transition name="dropForeignKeys" begin-transaction="false" authz-action="all">
         <actions>
             <script>ec.entity.entityDbMeta.forceCheckExistingTables()</script>
             <set field="dropped" from="ec.entity.getEntityDbMeta().dropAllForeignKeys()"/>
@@ -68,7 +68,7 @@ along with this software (see the LICENSE.md file). If not, see
         </actions>
         <default-response url="."/>
     </transition>
-    <transition name="createForeignKeys" begin-transaction="false">
+    <transition name="createForeignKeys" begin-transaction="false" authz-action="all">
         <actions>
             <set field="created" from="ec.entity.getEntityDbMeta().createForeignKeysForExistingTables()"/>
             <message>Created ${created} foreign keys</message>
