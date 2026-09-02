@@ -5,6 +5,10 @@
             <q-btn-toggle dense unelevated v-model="writeMode" :options="writeModeOptions"
                           toggle-color="primary" @input="persistWriteMode"></q-btn-toggle>
         </div>
+        <div class="col-auto">
+            <q-toggle dense v-model="forceSkillUse" label="Force Skill Use"
+                      @input="persistForceSkillUse"></q-toggle>
+        </div>
         <div class="col text-caption text-grey-7">{{ writeModeHint }}</div>
         <div class="col-auto">
             <q-btn dense outline no-caps :label="chatOnLeft ? 'Chat | Screen' : 'Screen | Chat'"
@@ -260,6 +264,7 @@ function formatArgsFallback(name, args) {
     }
     if (name === 'find_skill') {
         if (args.query) parts.push('query=' + args.query);
+        if (args.select) parts.push('select=' + args.select);
         if (args.limit != null) parts.push('limit=' + args.limit);
         return parts.join(' ');
     }
@@ -289,11 +294,21 @@ function formatResultFallback(name, content) {
     if (name === 'browse' && content.children) return (content.children.length || 0) + ' children';
     if (name === 'request' && content.status != null) return 'status=' + content.status;
     if (name === 'run_service') return content.ok ? 'ok' : '';
-    if (name === 'find_skill' && content.skills) {
-        if (!content.skills.length) return 'none';
-        return content.skills.map(function(s) { return s && s.name; }).filter(Boolean).slice(0, 4).join(',');
+    if (name === 'find_skill') {
+        if (content.selected && content.selected.name) return 'selected=' + content.selected.name;
+        if (content.skills) {
+            if (!content.skills.length) return 'none';
+            return content.skills.map(function(s) { return s && s.name; }).filter(Boolean).slice(0, 4).join(',');
+        }
     }
-    if (name === 'enter_sim' && content.proposedSkillName) return 'proposed=' + content.proposedSkillName;
+    if (name === 'enter_sim') {
+        if (content.proposedSkillName) {
+            var simParts = ['proposed=' + content.proposedSkillName];
+            if (content.proposedSkillId) simParts.push('skillId=' + content.proposedSkillId);
+            if (content.selected === false) simParts.push('not selected');
+            return simParts.join(' ');
+        }
+    }
     if (name === 'write_ui' && content.submitted != null) return content.submitted ? 'submitted' : 'not submitted';
     if (content.ok) return 'ok';
     if (content.status != null) return 'status=' + content.status;
@@ -357,7 +372,7 @@ function ensureSfcProps(comp) {
 module.exports = {
     data: function() {
         return {
-            chatOnLeft: true, writeMode: 'script', splitPct: 40,
+            chatOnLeft: true, writeMode: 'script', forceSkillUse: false, splitPct: 40,
             mobileTab: 'chat',
             composer: '', streaming: false,
             conversationId: null, canvasId: null,
@@ -381,9 +396,11 @@ module.exports = {
             ];
         },
         writeModeHint: function() {
-            return this.writeMode === 'script'
+            var mode = this.writeMode === 'script'
                 ? 'This screen runs the listed actions when you click.'
                 : 'Assist runs the listed actions after you click.';
+            if (!this.forceSkillUse) return mode;
+            return mode + ' Force Skill Use: select a skill or enter sim before other tools.';
         },
         llmBase: function() {
             var root = (this.$root && this.$root.appRootPath) || '';
@@ -425,6 +442,9 @@ module.exports = {
                 error: moqui.handleAjaxError });
         },
         persistWriteMode: function() { this.persistPref('ASSIST_WRITE_MODE', this.writeMode); },
+        persistForceSkillUse: function() {
+            this.persistPref('ASSIST_FORCE_SKILL_USE', this.forceSkillUse ? 'true' : 'false');
+        },
         toggleSide: function() {
             this.chatOnLeft = !this.chatOnLeft;
             this.persistPref('ASSIST_CHAT_SIDE', this.chatOnLeft ? 'left' : 'right');
@@ -452,6 +472,8 @@ module.exports = {
                     if (prefs.ASSIST_CHAT_SIDE === 'right') vm.chatOnLeft = false;
                     if (prefs.ASSIST_WRITE_MODE === 'agent' || prefs.ASSIST_WRITE_MODE === 'script')
                         vm.writeMode = prefs.ASSIST_WRITE_MODE;
+                    if (prefs.ASSIST_FORCE_SKILL_USE === 'true') vm.forceSkillUse = true;
+                    if (prefs.ASSIST_FORCE_SKILL_USE === 'false') vm.forceSkillUse = false;
                 } });
         },
         loadProfiles: function() {
@@ -482,14 +504,14 @@ module.exports = {
             if (this.pendingToolCalls.length) this.resumeChat(text);
             else this.chat(text);
         },
-        toolNames: function() { return ['browse', 'request', 'write_ui', 'run_service']; },
+        toolNames: function() { return ['find_skill', 'enter_sim', 'browse', 'request', 'write_ui', 'run_service']; },
         headers: function(stream) {
             var h = { 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrf, Accept: stream ? 'text/event-stream' : 'application/json' };
             return h;
         },
         chat: function(text) {
             var body = { profile: 'assist', purpose: 'assist', canvasId: this.canvasId,
-                user: text, tools: this.toolNames(), stream: true };
+                user: text, tools: this.toolNames(), stream: true, forceSkillUse: !!this.forceSkillUse };
             if (this.conversationId) body.conversationId = this.conversationId;
             this.runSse(this.llmBase + '/chat', body);
         },
@@ -499,6 +521,7 @@ module.exports = {
             var content = this.writeUiResult(false, null);
             content.userMessage = text;
             var body = { profile: 'assist', tools: this.toolNames(), user: text, stream: true,
+                forceSkillUse: !!this.forceSkillUse,
                 toolResults: [{ id: pending.id, name: pending.name || 'write_ui', content: content }] };
             this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
         },
@@ -664,6 +687,7 @@ module.exports = {
             var content = this.writeUiResult(true, buttonId);
             content.actionResults = actionResults || [];
             var body = { profile: 'assist', tools: this.toolNames(), stream: true,
+                forceSkillUse: !!this.forceSkillUse,
                 toolResults: [{ id: pending.id, name: pending.name || 'write_ui', content: content }] };
             this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
         },
