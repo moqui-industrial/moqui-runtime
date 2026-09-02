@@ -17,7 +17,6 @@
             <q-btn dense outline no-caps color="negative" label="Cancel" :disable="!streaming" @click="cancelTurn"></q-btn>
         </div>
     </div>
-    <q-banner v-if="banner" dense class="bg-warning text-dark q-mb-sm">{{ banner }}</q-banner>
     <q-splitter v-if="!isMobile" v-model="splitPct" :reverse="!chatOnLeft" style="height: calc(100vh - 140px)">
         <template v-slot:before>
             <div class="assist-pane assist-chat q-pa-sm column" style="height:100%">
@@ -144,6 +143,16 @@ function parseSseChunk(buffer, onEvent) {
         onEvent(event, parsed);
     }
     return rest;
+}
+var HTML_ACTION_ERROR = 'HTML screens are not valid tool results. Use /apps (not /qapps). GET {screen}/actions for screen JSON, GET {screen}/actions/{formListName} for form-list rows (browse jsonPath), or POST {screen}/{transitionName} for a named transition from browse (not /actions/{transition})';
+function isHtmlBody(text, contentType) {
+    if (contentType && String(contentType).toLowerCase().indexOf('html') >= 0) return true;
+    if (text == null) return false;
+    var t = String(text).trim();
+    if (!t) return false;
+    var head = t.length > 32 ? t.slice(0, 32).toLowerCase() : t.toLowerCase();
+    return head.indexOf('<!doctype') === 0 || head.indexOf('<html') === 0
+        || head.indexOf('<body') === 0 || head.indexOf('<head') === 0;
 }
 function validateActionPath(path) {
     if (!path || path.charAt(0) !== '/') return 'path must start with /';
@@ -290,6 +299,27 @@ function formatResultFallback(name, content) {
     if (content.status != null) return 'status=' + content.status;
     return '';
 }
+function assistNotify(message, kind) {
+    if (!message) return;
+    var type = kind === 'error' || kind === 'negative' ? 'danger'
+        : kind === 'positive' || kind === 'success' ? 'success'
+        : (kind || 'warning');
+    if (window.moqui && moqui.notifyMessages) {
+        if (type === 'danger') moqui.notifyMessages(null, String(message));
+        else moqui.notifyMessages([{ type: type, message: String(message) }]);
+        return;
+    }
+    var q = window.moqui && moqui.webrootVue && moqui.webrootVue.$q;
+    if (q && q.notify) {
+        var qType = type === 'danger' ? 'negative' : type === 'success' ? 'positive' : type;
+        var base = qType === 'negative' && moqui.notifyOptsError ? moqui.notifyOptsError
+            : qType === 'info' && moqui.notifyOptsInfo ? moqui.notifyOptsInfo
+            : qType === 'positive' && moqui.notifyOpts ? moqui.notifyOpts
+            : { timeout: 10000, type: 'warning' };
+        q.notify($.extend({}, base, { type: qType, message: String(message) }));
+        if (moqui.webrootVue.addNotify) moqui.webrootVue.addNotify(String(message), qType);
+    }
+}
 function formatDoneLine(data) {
     if (!data) return '';
     var parts = [];
@@ -329,7 +359,7 @@ module.exports = {
         return {
             chatOnLeft: true, writeMode: 'script', splitPct: 40,
             mobileTab: 'chat',
-            composer: '', streaming: false, banner: '',
+            composer: '', streaming: false,
             conversationId: null, canvasId: null,
             messages: [], pendingToolCalls: [],
             schema: null, fieldValues: {}, dirtyFields: {},
@@ -412,7 +442,6 @@ module.exports = {
             this.vueSfcKey = null;
             this.vueSfcFailed = false;
             this.vueSfcGen = (this.vueSfcGen || 0) + 1;
-            this.banner = '';
         },
         loadPrefs: function() {
             var vm = this;
@@ -434,7 +463,7 @@ module.exports = {
                     var assist = list.filter(function(p) { return p.name === 'assist'; })[0] || list[0];
                     vm.profileFlags = assist || {};
                     if (assist && assist.allowUnprefixedRequest === false && assist.allowBrowse === false)
-                        vm.banner = 'Assist profile tools are limited; browse/request may be unavailable.';
+                        assistNotify('Assist profile tools are limited; browse/request may be unavailable.', 'warning');
                 }).catch(function() { /* ignore */ });
         },
         loadConversations: function() {
@@ -508,7 +537,7 @@ module.exports = {
             for (var fi = 0; fi < flds.length; fi++) if (flds[fi] && flds[fi].label)
                 flds[fi].label = unescapeHtml(flds[fi].label);
             this.schema = schema;
-            if (schema.sfcError) this.banner = schema.sfcError;
+            if (schema.sfcError) assistNotify(schema.sfcError, 'error');
             var next = {};
             var fields = schema.fields || [];
             for (var i = 0; i < fields.length; i++) {
@@ -540,13 +569,13 @@ module.exports = {
             if (!text || text.toLowerCase().indexOf('<template') < 0) {
                 this.vueSfcGen = (this.vueSfcGen || 0) + 1;
                 if (!this.vueSfcComp) this.vueSfcFailed = true;
-                if (schema && schema.sfcError && !this.banner) this.banner = schema.sfcError;
+                if (schema && schema.sfcError) assistNotify(schema.sfcError, 'error');
                 return;
             }
             var key = hashString(text);
             if (key === this.vueSfcKey && this.vueSfcComp) { this.vueSfcFailed = false; return; }
             if (typeof httpVueLoader === 'undefined' || !httpVueLoader.parse) {
-                this.banner = 'Generated screen failed to compile: httpVueLoader is not available';
+                assistNotify('Generated screen failed to compile: httpVueLoader is not available', 'error');
                 if (!this.vueSfcComp) this.vueSfcFailed = true;
                 return;
             }
@@ -556,14 +585,14 @@ module.exports = {
             var parsed;
             try { parsed = httpVueLoader.parse(text, ''); }
             catch (e) {
-                this.banner = 'Generated screen failed to compile: ' + ((e && e.message) || String(e));
+                assistNotify('Generated screen failed to compile: ' + ((e && e.message) || String(e)), 'error');
                 if (!this.vueSfcComp) this.vueSfcFailed = true;
                 return;
             }
             Promise.resolve(typeof parsed === 'function' ? parsed() : parsed).then(function(comp) {
                 if (gen !== vm.vueSfcGen) return;
                 if (!comp || !comp.template) {
-                    vm.banner = 'Generated screen failed to compile: missing template';
+                    assistNotify('Generated screen failed to compile: missing template', 'error');
                     if (!vm.vueSfcComp) vm.vueSfcFailed = true;
                     return;
                 }
@@ -572,7 +601,7 @@ module.exports = {
                 vm.vueSfcFailed = false;
             }).catch(function(err) {
                 if (gen !== vm.vueSfcGen) return;
-                vm.banner = 'Generated screen failed to compile: ' + ((err && err.message) || String(err));
+                assistNotify('Generated screen failed to compile: ' + ((err && err.message) || String(err)), 'error');
                 if (!vm.vueSfcComp) vm.vueSfcFailed = true;
             });
         },
@@ -608,18 +637,18 @@ module.exports = {
         submitCanvas: function(buttonId) {
             if (this.streaming) return;
             if (this.writeMode === 'script' && !this.canSubmitScript) {
-                this.banner = 'No scripted actions on this screen. Switch to Agent or wait for actions.';
+                assistNotify('No scripted actions on this screen. Switch to Agent or wait for actions.', 'warning');
                 return;
             }
             var vm = this;
-            this.banner = this.writeMode === 'script'
-                ? 'Running listed actions…' : 'Submitted — Assist is working…';
+            assistNotify(this.writeMode === 'script'
+                ? 'Running listed actions…' : 'Submitted — Assist is working…', 'info');
             if (this.writeMode === 'script') {
                 this.runScriptActions().then(function(actionResults) {
-                    vm.banner = 'Actions finished; Assist is reviewing results…';
+                    assistNotify('Actions finished; Assist is reviewing results…', 'info');
                     vm.finishSubmit(buttonId, actionResults);
                 }).catch(function(err) {
-                    vm.banner = (err && err.message) || String(err);
+                    assistNotify((err && err.message) || String(err), 'error');
                     vm.finishSubmit(buttonId, err.actionResults || []);
                 });
             } else {
@@ -629,7 +658,7 @@ module.exports = {
         finishSubmit: function(buttonId, actionResults) {
             var pending = this.pendingToolCalls[0];
             if (!pending || !this.conversationId) {
-                this.banner = 'Nothing to submit (no yielded form).';
+                assistNotify('Nothing to submit (no yielded form).', 'warning');
                 return;
             }
             var content = this.writeUiResult(true, buttonId);
@@ -678,15 +707,24 @@ module.exports = {
                     init.body = JSON.stringify(bodyObj);
                 } else {
                     var q = [];
-                    var qf = act.queryFromFields || [];
+                    var qf = act.queryFromFields;
+                    if (!qf || !qf.length) qf = Object.keys(vm.fieldValues);
                     for (var qi = 0; qi < qf.length; qi++) {
                         var qk = qf[qi];
-                        if (bag[qk] != null) q.push(encodeURIComponent(qk) + '=' + encodeURIComponent(bag[qk]));
+                        if (bag[qk] != null && bag[qk] !== '') q.push(encodeURIComponent(qk) + '=' + encodeURIComponent(bag[qk]));
                     }
                     if (q.length) url += (url.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
                 }
                 return fetch(url, init).then(function(r) {
                     return r.text().then(function(txt) {
+                        var ct = r.headers && r.headers.get ? r.headers.get('Content-Type') : null;
+                        if (isHtmlBody(txt, ct)) {
+                            failed[act.id] = true;
+                            results.push({ id: act.id, status: r.status, error: HTML_ACTION_ERROR });
+                            var htmlErr = new Error((act.label || act.id) + ' returned HTML, not JSON');
+                            htmlErr.actionResults = results;
+                            throw htmlErr;
+                        }
                         var parsed = txt;
                         try { parsed = JSON.parse(txt); } catch (e) { /* keep */ }
                         var row = { id: act.id, status: r.status, body: parsed };
@@ -709,7 +747,6 @@ module.exports = {
         runSse: function(url, body) {
             var vm = this;
             this.streaming = true;
-            this.banner = '';
             this.abortCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
             var assistant = { role: 'assistant', content: '' };
             this.messages.push(assistant);
@@ -742,8 +779,9 @@ module.exports = {
             }).catch(function(err) {
                 vm.streaming = false;
                 if (err && err.name === 'AbortError') return;
-                vm.banner = (err && err.message) || String(err);
-                assistant.content = assistant.content || vm.banner;
+                var msg = (err && err.message) || String(err);
+                assistNotify(msg, 'warning');
+                assistant.content = assistant.content || msg;
             });
         },
         onSse: function(event, data, assistant) {
@@ -774,7 +812,7 @@ module.exports = {
                 if (doneLine) this.messages.push({ role: 'done', content: doneLine });
             } else if (event === 'error') {
                 this.streaming = false;
-                this.banner = (data && data.message) || 'LLM error';
+                assistNotify((data && data.message) || 'LLM error', 'warning');
             }
         },
         handleJsonTurn: function(j, assistant) {

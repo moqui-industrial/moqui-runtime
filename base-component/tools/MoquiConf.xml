@@ -15,6 +15,6 @@
                 allow-browse="true" allow-run-service="true"
                 allow-unprefixed-request="true"
                 max-iterations="20"
-                system-location="component://tools/template/AssistSystem.md"/>
+                system-location="component://tools/prompt/AssistSystem.ftl"/>
     </llm-facade>
 </moqui-conf>
