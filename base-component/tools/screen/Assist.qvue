@@ -23,8 +23,9 @@
             <div class="assist-pane assist-chat q-pa-sm column" style="height:100%">
                 <div class="col overflow-auto" style="min-height:0">
                     <div v-for="(m, i) in messages" :key="i" class="q-mb-sm">
-                        <div class="text-caption text-grey-7">{{ m.role }}<span v-if="m.name"> {{ m.name }}</span></div>
-                        <div v-if="m.role==='tool'" class="text-caption">{{ m.kind }} {{ m.name }}</div>
+                        <div v-if="m.role!=='tool' && m.role!=='done'" class="text-caption text-grey-7">{{ m.role }}<span v-if="m.name"> {{ m.name }}</span></div>
+                        <div v-if="m.role==='tool'" class="text-caption">{{ m.kind }} {{ m.name }}<span v-if="toolSummary(m)"> — {{ toolSummary(m) }}</span></div>
+                        <div v-else-if="m.role==='done'" class="text-caption text-grey-7">{{ m.content }}</div>
                         <div v-else style="white-space:pre-wrap">{{ m.content }}</div>
                     </div>
                 </div>
@@ -217,6 +218,91 @@ function hashString(s) {
 function isWriteUiArgs(args) {
     return !!(args && (args.fields || args.columns || args.sfc || args.template
             || args.kind === 'form' || args.kind === 'vue-sfc'));
+}
+function sensitiveArgKey(k) {
+    if (!k) return false;
+    var l = String(k).toLowerCase();
+    if (l === 'token' || l === 'sfc' || l === 'template' || l === 'script' || l === 'style') return true;
+    return /password|secret|api[_-]?key|authorization|ssn|creditcard/.test(l);
+}
+function formatArgsFallback(name, args) {
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return '';
+    var parts = [];
+    if (name === 'browse') {
+        if (args.path) parts.push('path=' + args.path);
+        if (args.match) parts.push('match=' + args.match);
+        if (args.depth != null && args.depth !== 1) parts.push('depth=' + args.depth);
+        if (args.detail) parts.push('detail=true');
+        return parts.join(' ');
+    }
+    if (name === 'request') {
+        return String(args.method || '?') + ' ' + String(args.path || '?');
+    }
+    if (name === 'run_service') {
+        if (args.serviceName) parts.push(args.serviceName);
+        var params = args.parameters;
+        if (params && typeof params === 'object' && !Array.isArray(params)) {
+            Object.keys(params).forEach(function(k) {
+                if (sensitiveArgKey(k)) parts.push(k + '=***');
+                else if (params[k] != null && typeof params[k] !== 'object') parts.push(k + '=' + params[k]);
+            });
+        }
+        return parts.join(' ');
+    }
+    if (name === 'find_skill') {
+        if (args.query) parts.push('query=' + args.query);
+        if (args.limit != null) parts.push('limit=' + args.limit);
+        return parts.join(' ');
+    }
+    if (name === 'enter_sim') {
+        if (args.goal) parts.push('goal=' + args.goal);
+        return parts.join(' ');
+    }
+    if (name === 'write_ui') {
+        parts.push('kind=' + (args.kind || 'form'));
+        if (args.title) parts.push('title=' + args.title);
+        if (args.fields && args.fields.length) parts.push('fields=' + args.fields.length);
+        return parts.join(' ');
+    }
+    Object.keys(args).forEach(function(k) {
+        if (sensitiveArgKey(k) || parts.length >= 6) return;
+        var v = args[k];
+        if (v == null || typeof v === 'object') return;
+        parts.push(k + '=' + v);
+    });
+    return parts.join(' ');
+}
+function formatResultFallback(name, content) {
+    if (content == null) return '';
+    if (typeof content === 'string') return content.length > 80 ? content.slice(0, 80) + '...' : content;
+    if (typeof content !== 'object') return String(content);
+    if (content.error) return 'error=' + content.error;
+    if (name === 'browse' && content.children) return (content.children.length || 0) + ' children';
+    if (name === 'request' && content.status != null) return 'status=' + content.status;
+    if (name === 'run_service') return content.ok ? 'ok' : '';
+    if (name === 'find_skill' && content.skills) {
+        if (!content.skills.length) return 'none';
+        return content.skills.map(function(s) { return s && s.name; }).filter(Boolean).slice(0, 4).join(',');
+    }
+    if (name === 'enter_sim' && content.proposedSkillName) return 'proposed=' + content.proposedSkillName;
+    if (name === 'write_ui' && content.submitted != null) return content.submitted ? 'submitted' : 'not submitted';
+    if (content.ok) return 'ok';
+    if (content.status != null) return 'status=' + content.status;
+    return '';
+}
+function formatDoneLine(data) {
+    if (!data) return '';
+    var parts = [];
+    if (data.yielded) parts.push('yielded');
+    else if (data.finishReason) parts.push(data.finishReason);
+    if (data.durationMs != null && data.durationMs !== '') parts.push(data.durationMs + 'ms');
+    var u = data.usage;
+    if (u && (u.promptTokens != null || u.completionTokens != null || u.totalTokens != null)) {
+        parts.push('tokens=' + (u.promptTokens != null ? u.promptTokens : '?') + '/'
+            + (u.completionTokens != null ? u.completionTokens : '?') + '/'
+            + (u.totalTokens != null ? u.totalTokens : '?'));
+    }
+    return parts.join(' ');
 }
 function ensureSfcProps(comp) {
     if (!comp) return comp;
@@ -668,9 +754,11 @@ module.exports = {
             } else if (event === 'delta' && data && data.content) {
                 assistant.content = (assistant.content || '') + data.content;
             } else if (event === 'tool_call') {
-                this.messages.push({ role: 'tool', kind: 'call', name: data && data.name, arguments: data && data.arguments });
+                this.messages.push({ role: 'tool', kind: 'call', name: data && data.name,
+                    arguments: data && data.arguments, summary: data && data.summary });
             } else if (event === 'tool_result') {
-                this.messages.push({ role: 'tool', kind: 'result', name: data && data.name, content: data && data.content });
+                this.messages.push({ role: 'tool', kind: 'result', name: data && data.name,
+                    content: data && data.content, summary: data && data.summary });
             } else if (event === 'yield') {
                 this.pendingToolCalls = (data && data.pendingToolCalls) || [];
                 var call = this.pendingToolCalls[0];
@@ -682,6 +770,8 @@ module.exports = {
             } else if (event === 'done') {
                 this.streaming = false;
                 if (data && !data.yielded) this.pendingToolCalls = [];
+                var doneLine = formatDoneLine(data);
+                if (doneLine) this.messages.push({ role: 'done', content: doneLine });
             } else if (event === 'error') {
                 this.streaming = false;
                 this.banner = (data && data.message) || 'LLM error';
@@ -698,6 +788,8 @@ module.exports = {
                 if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = null; } }
                 if (isWriteUiArgs(args)) this.applyYield(args);
             }
+            var doneLine = formatDoneLine(j);
+            if (doneLine) this.messages.push({ role: 'done', content: doneLine });
         },
         maybeTitle: function() {
             if (!this.conversationId) return;
@@ -742,6 +834,13 @@ module.exports = {
             if (widget === 'date-time') return 'm-date-time';
             if (widget === 'display' || widget === 'display-entity') return 'div';
             return 'm-text-line';
+        },
+        toolSummary: function(m) {
+            if (!m) return '';
+            if (m.summary) return m.summary;
+            if (m.kind === 'call') return formatArgsFallback(m.name, m.arguments);
+            if (m.kind === 'result') return formatResultFallback(m.name, m.content);
+            return '';
         }
     },
     mounted: function() {

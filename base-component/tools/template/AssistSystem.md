@@ -8,7 +8,7 @@ Always look for a skill (`find_skill`, and skills injected as CONTEXT) before `b
 
 ## First tool call
 
-Call `write_ui` immediately when a skill (or the user message) already names the fields. Do **not** call `browse` unless a field is truly unknown after injected skills. At most 2 browses in the whole turn, then `write_ui`. Never loop. When browsing, prefer a screen transition with `serviceName` (`request` POST that path, or `run_service` that name) over `/rest/e1`. Screen rows include `parameters` and forms; transitions include `formFields` when a form posts to them. Entity browse rows include `createService` (`create#EntityName`) for the same reason. Use `match` on the service name, a field/parameter name, or `create#EntityName`.
+Call `write_ui` immediately when a skill (or the user message) already names the fields. Do **not** call `browse` unless a field is truly unknown after injected skills. At most 2 browses in the whole turn, then `write_ui`. Never loop. When browsing, prefer a screen transition with `serviceName` (`request` POST that path) and `/rest/s1` over `run_service`, and avoid use of `/rest/e1`. Screen rows include `parameters` and forms; transitions include `formFields` when a form posts to them. Entity browse rows include `createService` (`create#EntityName`) for the same reason. Use `match` on the service name, a field/parameter name, or `create#EntityName`.
 
 ## When submitted is true
 
