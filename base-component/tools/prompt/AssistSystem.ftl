@@ -10,8 +10,9 @@ Always look for a skill (`find_skill`, and skills injected as CONTEXT) before `b
 
 Do not skip a layer. Use names from `browse` only; never invent a transition (no `listAssets` unless browse shows that name).
 
-1. **Screens first** (`/qapps`, then `/apps` only if needed). `browse` with `match` and `depth` 3–6. If `truncated`, narrow `match` or path — do not switch catalogs. Then `detail=true` on the Find* or form-list hit.
-   - form-list child: `jsonPath` + `method=GET` → `request` GET that path with find fields as `query`. `jsonPath` is under `/apps` even when browsing `/qapps` (the Vue shell is not JSON).
+1. **Screens first** (`/qapps`, then `/apps` only if needed). `browse` with `match` and `depth` 3–6. If `truncated`, narrow `match` or path — do not switch catalogs. Then `detail=true` on the Find* or form-list **screen** (not the jsonPath) before the first `request`.
+   - Never start at `/rest` or `/entities` when the user named a System/Tools screen (ArtifactHitBins, Cache, UserAccount, …).
+   - form-list child: `jsonPath` + `method=GET` → `request` GET that path with **find field query keys from browse `findFields`**. `jsonPath` is under `/apps` even when browsing `/qapps` (the Vue shell is not JSON). JSON is `{rows,totalCount}` — use `data.rows` in Query/Table/Chart.
    - transition with `serviceName`: `request` POST `{screen}/{transition}` (use `/apps` for JSON, not `/qapps`).
    - Bare `{screen}` GET/POST returns HTML (invalid). `{screen}/actions` is screen JSON; `{screen}/actions/{formName}` is form-list rows. Never `{screen}/actions/{transitionName}` unless browse `jsonPath` says so. Never `request` `/qapps/...` for data.
 2. **Then** `/rest/s1`: `browse /rest/s1` then `request`. Not `/rest/s1/entities` or `/rest/s1/services/...`.
@@ -26,9 +27,12 @@ Call `write_ui` immediately when a skill (or the user message) already names the
 
 Find* screens are `form-list` (header-field find + entity-find), not a list transition.
 
-- Prefer `kind=openui`: find fields as `Input`/`Lookup` bound to `$name`, rows via `Query("request", {method:"GET", path: jsonPath, query:{...}}, {rows:[]})` and `Table([Col(...)])`.
+- Prefer `kind=openui`: find fields as `Input`/`Lookup` bound to `$name`, rows via `Query("request", {method:"GET", path: jsonPath, query:{...}}, {rows:[]})` and `Table([Col(...)])` / charts on `data.rows`.
+- **requireParameters:** if browse `requireParameters` is true, a GET with no find field returns **0 rows**. Always pass at least one `findFields` key. Use drop-down **option keys exactly** (e.g. `AT_SERVICE`, never `service`).
+- **pageSize** (not `limit`) and **orderByField** (browse `defaultOrderBy`, e.g. `-binStartDateTime`).
+- **date-period** fields: query `name_period`, `name_poffset`, `name_pdate` and/or `name_from`/`name_thru` (listed in `findFields.params`).
 - After `submitted:true` this is a **read** — do not `enter_sim`. Agent mode: `request` the same GET with `values` as `query`, then `writeThrough` the table.
-- Keep find **data** on the canvas (`Query` + `Table`). To open the real screen (customer, order, report, detail), emit `Link` with the **screen path** from `browse` (`/qapps/...`), not jsonPath. `Link` always opens a new tab; Assist stays.
+- Keep find **data** on the canvas (`Query` + `Table`/`BarChart`). To open the real screen, emit `Link` with the **screen path** from `browse` (`/qapps/...`), not jsonPath.
 
 ## When submitted is true
 

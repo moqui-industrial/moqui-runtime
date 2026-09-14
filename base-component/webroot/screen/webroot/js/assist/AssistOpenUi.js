@@ -230,6 +230,11 @@
                             err.body = parsed;
                             throw err;
                         }
+                        if (Array.isArray(parsed) && path.indexOf('/actions/') >= 0) {
+                            var total = r.headers && r.headers.get ? r.headers.get('X-Total-Count') : null;
+                            parsed = { rows: parsed,
+                                totalCount: total != null && total !== '' ? Number(total) : parsed.length };
+                        }
                         return parsed;
                     });
                 });

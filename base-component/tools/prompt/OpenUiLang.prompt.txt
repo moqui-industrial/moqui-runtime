@@ -90,8 +90,8 @@ Data functions prefixed with `@` to distinguish from components. These are the O
 Use @-prefixed built-in functions (@Count, @Sum, @Avg, @Min, @Max, @Round) on Query results — do NOT hardcode computed values.
 
 @Count(array) → number — Returns array length
-@First(array) → element — Returns first element of array
-@Last(array) → element — Returns last element of array
+@First(array) → element — First element only (not first N)
+@Last(array) → element — Last element only (not last N). For N rows, set Query pageSize=N with orderByField.
 @Sum(numbers[]) → number — Sum of numeric array
 @Avg(numbers[]) → number — Average of numeric array
 @Min(numbers[]) → number — Minimum value in array
@@ -255,12 +255,13 @@ Always write the root = Stack(...) statement first so the UI shell appears immed
 ## Examples
 
 $q = ""
-data = Query("request", {method:"GET", path:"/apps/example/FindThing/actions/ListThings", query:{name:$q}}, {rows:[]})
+data = Query("request", {method:"GET", path:"/apps/example/FindThing/actions/ListThings", query:{name:$q, pageSize:"50"}}, {rows:[]})
 root = Stack([CardHeader("Find"), Form("find", Button("Search", Action([@Run(data)])), [FormControl("Name", Input("q", $q))]), Table([Col("Name", data.rows.name), Col("Open", @Each(data.rows, "r", Link("View", "/qapps/example/EditThing", {thingId: r.thingId})))])])
 
-Chart from the same query:
-statusPie = PieChart(["Open", "Closed"], [@Count(@Filter(data.rows, "statusId", "==", "Open")), @Count(@Filter(data.rows, "statusId", "==", "Closed"))], "donut")
-byDay = BarChart(data.rows.entryDate, [Series("Count", data.rows.quantity)])
+Chart from a form-list (jsonShape {rows,totalCount}; findFields option keys exactly; pageSize not limit):
+$artifactType = "AT_SERVICE"
+bins = Query("request", {method:"GET", path:"/apps/system/ArtifactHitBins/actions/ArtifactHitBins", query:{artifactType:$artifactType, pageSize:"200", orderByField:"-binStartDateTime"}}, {rows:[]})
+root = Stack([CardHeader("Service hits"), BarChart(bins.rows.binStartDateTime, [Series("Hits", bins.rows.hitCount)], "grouped", "Bin start", "Hits")])
 
 Markdown / mermaid:
 doc = MarkDownRenderer("# Notes\n\n```mermaid\nflowchart LR\n  A-->B\n```")
