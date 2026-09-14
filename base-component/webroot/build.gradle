@@ -184,6 +184,9 @@ task minifyJsDir(type: org.gradlewebtools.minify.JsMinifyTask) {
         // delete the min files we don't need/want
         file(webrootPath + '/js/http-vue-loader/httpVueLoader.min.js').delete()
         file(webrootPath + '/js/qz-tray/MoquiQzComponent.min.js').delete()
+        file(webrootPath + '/js/assist/AssistOpenUi.min.js').delete()
+        file(webrootPath + '/js/assist/AssistOpenUiLibrary.min.js').delete()
+        // keep committed lang-core.umd.min.js (already minified vendor bundle)
     }
 }
 task combineBaseJs {

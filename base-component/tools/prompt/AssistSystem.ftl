@@ -26,11 +26,8 @@ Call `write_ui` immediately when a skill (or the user message) already names the
 
 Find* screens are `form-list` (header-field find + entity-find), not a list transition.
 
-- Recreate header-field find fields on `kind=form`. Scalar `defaultValue` only (string/number/boolean), never `{}`.
-- `actions[]`: GET browse `jsonPath`, `queryFromFields` = those fields, primary Find.
-- After `submitted:true` this is a **read** — do not `enter_sim`.
-  - Script: if `actionResults[0].body` is a JSON array, `writeThrough` `columns` + `rows` and keep the find fields.
-  - Agent: `request` the same GET with `values` as `query`, then `writeThrough`.
+- Prefer `kind=openui`: find fields as `Input`/`Lookup` bound to `$name`, rows via `Query("request", {method:"GET", path: jsonPath, query:{...}}, {rows:[]})` and `Table([Col(...)])`.
+- After `submitted:true` this is a **read** — do not `enter_sim`. Agent mode: `request` the same GET with `values` as `query`, then `writeThrough` the table.
 - Do not send the user to a `/qapps/...` URL when JSON rows exist.
 
 ## When submitted is true
@@ -41,16 +38,15 @@ If you called `enter_sim` this turn, follow the proposed skill. If there is stil
 
 ## write_ui
 
-Two canvas kinds. Field `name`s = service/REST parameters. Always set `actions[]`. After the first canvas, `writeThrough: true` to edit; use `removeFields`/`removeActions` to drop. Never hidden passwords. Keep chat short; the screen is the product.
+Default **`kind=openui`** with `lang` (OpenUI Lang). Field names = service/REST parameters. After the first canvas, `writeThrough: true` and emit only changed statements. Never hidden passwords. Keep chat short; the screen is the product.
 
-- **`kind=form`** (default): xml-form widgets only. Do not emit HTML/Vue/JS. Use this for simple field lists (including the known writes above).
-- **`kind=vue-sfc`**: Vue 2 single-file component mounted as a sub-component on Assist. Use when you need layout beyond a field list (tabs, computed UI, editable table, lookup dropdowns).
+Script mode: generated `Button` + `Mutation("request", {method, path, body})` POSTs on click (CSRF, same-origin). Agent mode: you run `run_service` / `request` after `submitted:true`. `create#UserAccount` must be `run_service`.
 
-Script mode runs `actions[]` as HTTP. Agent mode: you run `run_service` / `request` after `submitted:true`. `create#UserAccount` must be `run_service`.
+<#include "OpenUiLang.prompt.txt">
 
-### kind=vue-sfc
+### kind=vue-sfc (escape hatch)
 
-Assist is `/qapps/` (Vue **2** + Quasar **v1**). The SFC is a child of Assist, not a full screen.
+Use **only** when the OpenUI library cannot express the layout. Assist is `/qapps/` (Vue **2** + Quasar **v1**). The SFC is a child of Assist, not a full screen.
 
 **Script:** Vue 2 Options API with `module.exports = { ... }`. Not `export default`, not `<script setup>`, not Vue 3.
 

@@ -16,6 +16,14 @@ along with this software (see the LICENSE.md file). If not, see
         default-menu-title="Assist" menu-image="fa fa-comments" menu-image-type="icon"
         render-modes="vue,qvue" server-static="vue,qvue">
 
+    <pre-actions><script><![CDATA[
+        if (footer_scripts != null) {
+            footer_scripts.add('/js/assist/lang-core.umd.min.js')
+            footer_scripts.add('/js/assist/AssistOpenUiLibrary.js')
+            footer_scripts.add('/js/assist/AssistOpenUi.js')
+        }
+    ]]></script></pre-actions>
+
     <transition name="setTitle" method="post">
         <parameter name="conversationId" required="true"/>
         <parameter name="title"/>

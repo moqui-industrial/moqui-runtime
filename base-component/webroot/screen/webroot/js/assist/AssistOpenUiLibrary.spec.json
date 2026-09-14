@@ -1,0 +1,184 @@
+{
+  "$defs": {
+    "Stack": {
+      "description": "Vertical or horizontal layout. Root is Stack. direction: column (default) or row. gap: s, m, or l.",
+      "properties": {
+        "children": { "type": "array" },
+        "direction": { "type": "string" },
+        "gap": { "type": "string" }
+      },
+      "required": ["children"]
+    },
+    "Card": {
+      "description": "Card container for a section of the canvas.",
+      "properties": {
+        "children": { "type": "array" }
+      },
+      "required": ["children"]
+    },
+    "CardHeader": {
+      "description": "Section title and optional subtitle.",
+      "properties": {
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" }
+      },
+      "required": ["title"]
+    },
+    "TextContent": {
+      "description": "Plain text. Do not emit HTML.",
+      "properties": {
+        "text": { "type": "string" }
+      },
+      "required": ["text"]
+    },
+    "Callout": {
+      "description": "Banner. type: info, warning, positive, or negative.",
+      "properties": {
+        "text": { "type": "string" },
+        "type": { "type": "string" }
+      },
+      "required": ["text"]
+    },
+    "Form": {
+      "description": "Form wrapper. Form(name, submitButton, [controls]).",
+      "properties": {
+        "name": { "type": "string" },
+        "submit": {},
+        "children": { "type": "array" }
+      },
+      "required": ["name", "children"]
+    },
+    "FormControl": {
+      "description": "Labeled control. FormControl(label, input).",
+      "properties": {
+        "label": { "type": "string" },
+        "control": {}
+      },
+      "required": ["label", "control"]
+    },
+    "Input": {
+      "description": "Single-line text. Input(name, $name, placeholder?, label?). Bind value to $name.",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "placeholder": { "type": "string" },
+        "label": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "TextArea": {
+      "description": "Multi-line text. TextArea(name, $name).",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "placeholder": { "type": "string" },
+        "label": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Select": {
+      "description": "Static dropdown. Select(name, $name, [SelectItem(value, label), ...]).",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "items": { "type": "array" },
+        "label": { "type": "string" }
+      },
+      "required": ["name", "items"]
+    },
+    "SelectItem": {
+      "description": "Select option. SelectItem(value, label).",
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "type": "string" }
+      },
+      "required": ["value", "label"]
+    },
+    "CheckBox": {
+      "description": "Checkbox. CheckBox(name, $name, label).",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "label": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "DateTime": {
+      "description": "Date/time. DateTime(name, $name, type?). type: date, time, or date-time.",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "type": { "type": "string" },
+        "label": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Lookup": {
+      "description": "Server-search dropdown. Lookup(name, $name, optionsUrl, valueField?, labelField?, dependsOn?). optionsUrl is a same-origin path from browse (not /qapps).",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "optionsUrl": { "type": "string" },
+        "valueField": { "type": "string" },
+        "labelField": { "type": "string" },
+        "dependsOn": {},
+        "label": { "type": "string" }
+      },
+      "required": ["name", "optionsUrl"]
+    },
+    "Display": {
+      "description": "Read-only value. Display(text) or Display(text, valueUrl).",
+      "properties": {
+        "text": { "type": "string" },
+        "valueUrl": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "Table": {
+      "description": "Data table. Table([Col(label, query.rows.field), ...]).",
+      "properties": {
+        "columns": { "type": "array" }
+      },
+      "required": ["columns"]
+    },
+    "Col": {
+      "description": "Table column. Col(label, valuesArray) — pass a plucked query column.",
+      "properties": {
+        "label": { "type": "string" },
+        "values": { "type": "array" }
+      },
+      "required": ["label"]
+    },
+    "Button": {
+      "description": "Button. Button(label, Action([@Run(mutation), @Run(query), @Reset($a)])). Script mode @Run(mutation) POSTs; Agent mode resumes.",
+      "properties": {
+        "label": { "type": "string" },
+        "action": {}
+      },
+      "required": ["label"]
+    },
+    "Buttons": {
+      "description": "Row of buttons.",
+      "properties": {
+        "children": { "type": "array" }
+      },
+      "required": ["children"]
+    },
+    "Tabs": {
+      "description": "Tabs. Tabs([TabItem(value, trigger, content), ...]).",
+      "properties": {
+        "children": { "type": "array" }
+      },
+      "required": ["children"]
+    },
+    "TabItem": {
+      "description": "Tab panel. TabItem(value, triggerLabel, content).",
+      "properties": {
+        "value": { "type": "string" },
+        "trigger": { "type": "string" },
+        "content": {}
+      },
+      "required": ["value", "trigger", "content"]
+    }
+  }
+}

@@ -59,6 +59,13 @@
                                 {{ a.label || a.id }} — {{ a.method }} {{ a.path }}</li>
                         </ul>
                     </div>
+                    <div v-if="showOpenUi" class="q-mb-md">
+                        <assist-openui :lang="schema.lang" :streaming="streaming" :mode="writeMode"
+                                       :csrf="csrf" :app-root="($root && $root.appRootPath) || ''"
+                                       :initial-state="fieldValues"
+                                       @action="onOpenUiAction" @state-update="onOpenUiState"
+                                       @error="onOpenUiError"></assist-openui>
+                    </div>
                     <div v-if="showVueSfc" class="q-mb-md">
                         <component :is="vueSfcComp" :key="vueSfcKey"
                                    :values="fieldValues" :schema="schema" :mode="writeMode"
@@ -104,10 +111,14 @@
                                     @input="onFieldInput(f.name, $event)"></q-checkbox>
                         <div v-else class="text-body2"><span class="text-grey-7">{{ f.label || f.name }}:</span> {{ fieldValues[f.name] }}</div>
                     </div>
-                    <div class="q-gutter-sm q-mt-md">
+                    <div v-if="showParentSubmit" class="q-gutter-sm q-mt-md">
                         <q-btn id="assist-submit" unelevated color="primary" no-caps
                                :label="primaryLabel" :disable="!canSubmitScript || streaming"
                                @click="submitCanvas(primaryId)"></q-btn>
+                        <q-btn outline no-caps :label="schema.cancelLabel || 'Cancel'"
+                               @click="newSession"></q-btn>
+                    </div>
+                    <div v-else class="q-gutter-sm q-mt-md">
                         <q-btn outline no-caps :label="schema.cancelLabel || 'Cancel'"
                                @click="newSession"></q-btn>
                     </div>
@@ -229,13 +240,53 @@ function hashString(s) {
     return String(h);
 }
 function isWriteUiArgs(args) {
-    return !!(args && (args.fields || args.columns || args.sfc || args.template
-            || args.kind === 'form' || args.kind === 'vue-sfc'));
+    return !!(args && (args.fields || args.columns || args.sfc || args.template || args.lang
+            || args.kind === 'form' || args.kind === 'vue-sfc' || args.kind === 'openui'));
+}
+function extractOpenUiLang(partialArgs) {
+    if (!partialArgs) return null;
+    if (typeof partialArgs === 'object' && partialArgs.lang) return String(partialArgs.lang);
+    var s = String(partialArgs);
+    try {
+        var parsed = JSON.parse(s);
+        if (parsed && parsed.lang) return String(parsed.lang);
+    } catch (e) { /* incomplete JSON */ }
+    var m = /"lang"\s*:\s*"/.exec(s);
+    if (!m) return null;
+    var i = m.index + m[0].length, out = [];
+    for (; i < s.length; i++) {
+        var c = s.charAt(i);
+        if (c === '\\' && i + 1 < s.length) {
+            var n = s.charAt(++i);
+            if (n === 'n') out.push('\n');
+            else if (n === 't') out.push('\t');
+            else if (n === '"') out.push('"');
+            else if (n === '\\') out.push('\\');
+            else out.push(n);
+        } else if (c === '"') break;
+        else out.push(c);
+    }
+    return out.join('');
+}
+function loadScriptOnce(src) {
+    return new Promise(function(resolve, reject) {
+        if (document.querySelector('script[data-assist-src="' + src + '"]') ||
+                document.querySelector('script[src^="' + src + '"]')) {
+            resolve(); return;
+        }
+        var s = document.createElement('script');
+        s.src = src;
+        s.async = false;
+        s.setAttribute('data-assist-src', src);
+        s.onload = function() { resolve(); };
+        s.onerror = function() { reject(new Error('Failed to load ' + src)); };
+        document.head.appendChild(s);
+    });
 }
 function sensitiveArgKey(k) {
     if (!k) return false;
     var l = String(k).toLowerCase();
-    if (l === 'token' || l === 'sfc' || l === 'template' || l === 'script' || l === 'style') return true;
+    if (l === 'token' || l === 'sfc' || l === 'template' || l === 'script' || l === 'style' || l === 'lang') return true;
     return /password|secret|api[_-]?key|authorization|ssn|creditcard/.test(l);
 }
 function formatArgsFallback(name, args) {
@@ -408,8 +459,17 @@ module.exports = {
         },
         csrf: function() { return (this.$root && this.$root.moquiSessionToken) || ''; },
         canSubmitScript: function() {
+            if (this.schema && this.schema.kind === 'openui') return true;
             var acts = this.schema && this.schema.actions;
             return this.writeMode !== 'script' || (acts && acts.length);
+        },
+        showOpenUi: function() {
+            return !!(this.schema && this.schema.kind === 'openui' && this.schema.lang);
+        },
+        showParentSubmit: function() {
+            if (!this.schema) return false;
+            if (this.schema.kind === 'openui' && this.writeMode === 'script') return false;
+            return true;
         },
         visibleFields: function() {
             var fields = (this.schema && this.schema.fields) || [];
@@ -430,8 +490,9 @@ module.exports = {
             return !!(this.vueSfcComp && this.schema && this.schema.kind === 'vue-sfc');
         },
         showFormWidgets: function() {
-            if (!this.schema || this.showVueSfc) return false;
+            if (!this.schema || this.showVueSfc || this.showOpenUi) return false;
             if (this.schema.kind === 'vue-sfc') return this.vueSfcFailed;
+            if (this.schema.kind === 'openui') return false;
             return true;
         }
     },
@@ -578,12 +639,85 @@ module.exports = {
         applyYield: function(args) {
             if (!args) return;
             this.applySchema(args);
-            if (args.kind === 'vue-sfc') this.loadVueSfc(args);
+            if (args.kind === 'openui') {
+                this.vueSfcGen = (this.vueSfcGen || 0) + 1;
+                this.vueSfcComp = null;
+                this.vueSfcKey = null;
+                this.vueSfcFailed = false;
+                this.loadOpenUi();
+            } else if (args.kind === 'vue-sfc') this.loadVueSfc(args);
             else {
                 this.vueSfcGen = (this.vueSfcGen || 0) + 1;
                 this.vueSfcComp = null;
                 this.vueSfcKey = null;
                 this.vueSfcFailed = false;
+            }
+        },
+        loadOpenUi: function() {
+            if (window.OpenUILang && window.AssistOpenUiReady) return Promise.resolve();
+            var root = (this.$root && this.$root.appRootPath) || '';
+            var files = [
+                root + '/js/assist/lang-core.umd.min.js',
+                root + '/js/assist/AssistOpenUiLibrary.js',
+                root + '/js/assist/AssistOpenUi.js'
+            ];
+            var chain = Promise.resolve();
+            files.forEach(function(src) {
+                chain = chain.then(function() { return loadScriptOnce(src); });
+            });
+            return chain.catch(function(err) {
+                assistNotify((err && err.message) || String(err), 'error');
+            });
+        },
+        onOpenUiState: function(snap) {
+            if (!snap || typeof snap !== 'object') return;
+            var next = Object.assign({}, this.fieldValues);
+            Object.keys(snap).forEach(function(k) {
+                var v = snap[k];
+                if (v && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, 'value'))
+                    v = v.value;
+                if (k.charAt(0) === '$') next[k.slice(1)] = v;
+                else if (v && typeof v === 'object' && !Array.isArray(v)) {
+                    Object.keys(v).forEach(function(fk) {
+                        var fv = v[fk];
+                        if (fv && typeof fv === 'object' && Object.prototype.hasOwnProperty.call(fv, 'value')) fv = fv.value;
+                        next[fk] = fv;
+                    });
+                } else next[k] = v;
+            });
+            this.fieldValues = next;
+        },
+        onOpenUiError: function(errors) {
+            if (!errors || !errors.length) return;
+            var critical = errors.filter(function(e) {
+                return e && (e.code === 'unknown-component' || e.code === 'parse-exception' || e.code === 'parse-failed');
+            });
+            if (critical.length)
+                assistNotify(critical[0].message || 'OpenUI parse error', 'warning');
+        },
+        onOpenUiAction: function(ev) {
+            if (!ev) return;
+            if (ev.formState) this.onOpenUiState(ev.formState);
+            var type = ev.type;
+            if (type === 'open_url') {
+                var url = ev.params && ev.params.url;
+                if (url && url.charAt(0) === '/' && url.indexOf('://') < 0 && url.indexOf('//') !== 0)
+                    window.open(((this.$root && this.$root.appRootPath) || '') + url, '_blank');
+                return;
+            }
+            if (type === 'submit' || type === 'continue_conversation') {
+                if (ev.humanFriendlyMessage && type === 'continue_conversation' && this.pendingToolCalls.length)
+                    this.resumeChat(ev.humanFriendlyMessage);
+                else this.submitCanvas(this.primaryId);
+            }
+        },
+        applyOpenUiDelta: function(argumentsSoFar) {
+            var lang = extractOpenUiLang(argumentsSoFar);
+            if (!lang) return;
+            if (!this.schema || this.schema.kind === 'openui' || !this.schema.kind) {
+                var next = Object.assign({}, this.schema || {}, { kind: 'openui', lang: lang });
+                this.schema = next;
+                this.loadOpenUi();
             }
         },
         loadVueSfc: function(schema) {
@@ -815,6 +949,8 @@ module.exports = {
                 if (first) this.maybeTitle();
             } else if (event === 'delta' && data && data.content) {
                 assistant.content = (assistant.content || '') + data.content;
+            } else if (event === 'write_ui_delta') {
+                this.applyOpenUiDelta(data && data.arguments);
             } else if (event === 'tool_call') {
                 this.messages.push({ role: 'tool', kind: 'call', name: data && data.name,
                     arguments: data && data.arguments, summary: data && data.summary });

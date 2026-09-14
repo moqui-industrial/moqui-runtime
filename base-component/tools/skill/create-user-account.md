@@ -14,11 +14,20 @@ services: [org.moqui.impl.UserServices.create#UserAccount]
 - Returns: `userId`
 - Then add ADMIN: `request` POST `/apps/system/Security/UserGroup/GroupUsers/createUserGroupMember` with `userGroupId=ADMIN`, `userId`, `fromDate` (now is fine if omitted)
 
-First canvas (`kind=form`) fields (all `text-line`, prefill from the user message): `username`, `firstName`, `lastName`, `emailAddress`, `newPassword`, `newPasswordVerify`, `userGroupId` (default `ADMIN`).
+First canvas (`kind=openui`) fields (prefill from the user message): `username`, `firstName`, `lastName`, `emailAddress`, `newPassword`, `newPasswordVerify`, `userGroupId` (default `ADMIN`).
 
-Actions to declare:
+Example `lang` (Script mode Mutation POSTs on Create):
 
-- `{id:"createUser", label:"Create user", method:"POST", path:"/apps/system/Security/UserAccount/UserAccountList/createUserAccount", primary:true, bodyFromFields:["username","firstName","lastName","emailAddress","newPassword","newPasswordVerify"]}`
-- `{id:"addGroup", label:"Add to ADMIN", method:"POST", path:"/apps/system/Security/UserGroup/GroupUsers/createUserGroupMember", dependsOn:["createUser"], bodyFromFields:["userId","userGroupId"]}`
+```
+$username = ""
+$firstName = ""
+$lastName = ""
+$emailAddress = ""
+$newPassword = ""
+$newPasswordVerify = ""
+$userGroupId = "ADMIN"
+createUser = Mutation("request", {method:"POST", path:"/apps/system/Security/UserAccount/UserAccountList/createUserAccount", body:{username:$username, firstName:$firstName, lastName:$lastName, emailAddress:$emailAddress, newPassword:$newPassword, newPasswordVerify:$newPasswordVerify}})
+root = Stack([CardHeader("Create user"), Form("create", Button("Create user", Action([@Run(createUser)])), [FormControl("Username", Input("username", $username)), FormControl("First name", Input("firstName", $firstName)), FormControl("Last name", Input("lastName", $lastName)), FormControl("Email", Input("emailAddress", $emailAddress)), FormControl("Password", Input("newPassword", $newPassword)), FormControl("Verify", Input("newPasswordVerify", $newPasswordVerify))])])
+```
 
 After `submitted:true`: `run_service` create#UserAccount, then POST GroupUsers with the returned `userId`. Then a short confirmation (no more input form).
