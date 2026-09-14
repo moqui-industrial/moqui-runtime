@@ -1,11 +1,12 @@
 {
   "$defs": {
     "Stack": {
-      "description": "Vertical or horizontal layout. Root is Stack. direction: column (default) or row. gap: s, m, or l.",
+      "description": "Vertical or horizontal layout. Root is Stack. direction: column (default) or row. gap: s, m, or l. wrap: true to wrap a row of cards/charts.",
       "properties": {
         "children": { "type": "array" },
         "direction": { "type": "string" },
-        "gap": { "type": "string" }
+        "gap": { "type": "string" },
+        "wrap": { "type": "boolean" }
       },
       "required": ["children"]
     },
@@ -25,9 +26,10 @@
       "required": ["title"]
     },
     "TextContent": {
-      "description": "Plain text. Do not emit HTML.",
+      "description": "Plain text. Do not emit HTML. size: body (default), small, or large.",
       "properties": {
-        "text": { "type": "string" }
+        "text": { "type": "string" },
+        "size": { "type": "string" }
       },
       "required": ["text"]
     },
@@ -38,6 +40,53 @@
         "type": { "type": "string" }
       },
       "required": ["text"]
+    },
+    "Separator": {
+      "description": "Horizontal rule between sections.",
+      "properties": {
+        "inset": { "type": "boolean" }
+      }
+    },
+    "Accordion": {
+      "description": "Expandable sections. Accordion([AccordionItem(value, title, content), ...]).",
+      "properties": {
+        "children": { "type": "array" }
+      },
+      "required": ["children"]
+    },
+    "AccordionItem": {
+      "description": "Accordion panel. AccordionItem(value, title, content).",
+      "properties": {
+        "value": { "type": "string" },
+        "title": { "type": "string" },
+        "content": {}
+      },
+      "required": ["value", "title", "content"]
+    },
+    "Steps": {
+      "description": "Linear stepper. Steps([StepsItem(value, title, content), ...]).",
+      "properties": {
+        "children": { "type": "array" }
+      },
+      "required": ["children"]
+    },
+    "StepsItem": {
+      "description": "Stepper panel. StepsItem(value, title, content).",
+      "properties": {
+        "value": { "type": "string" },
+        "title": { "type": "string" },
+        "content": {}
+      },
+      "required": ["value", "title", "content"]
+    },
+    "Modal": {
+      "description": "Dialog bound to $name (boolean). Modal(name, title, [children]). Open with @Set($name, true); X/Escape sets $name false.",
+      "properties": {
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "children": { "type": "array" }
+      },
+      "required": ["name", "title", "children"]
     },
     "Form": {
       "description": "Form wrapper. Form(name, submitButton, [controls]).",
@@ -103,6 +152,44 @@
       },
       "required": ["name"]
     },
+    "RadioGroup": {
+      "description": "Radio set. RadioGroup(name, $name, [RadioItem(value, label), ...], label?).",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "items": { "type": "array" },
+        "label": { "type": "string" }
+      },
+      "required": ["name", "items"]
+    },
+    "RadioItem": {
+      "description": "Radio option. RadioItem(value, label).",
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "type": "string" }
+      },
+      "required": ["value", "label"]
+    },
+    "Switch": {
+      "description": "Boolean toggle. Switch(name, $name, label).",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "label": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Slider": {
+      "description": "Numeric slider. Slider(name, $name, min?, max?, label?). min default 0, max default 100.",
+      "properties": {
+        "name": { "type": "string" },
+        "value": {},
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "label": { "type": "string" }
+      },
+      "required": ["name"]
+    },
     "DateTime": {
       "description": "Date/time. DateTime(name, $name, type?). type: date, time, or date-time.",
       "properties": {
@@ -110,6 +197,15 @@
         "value": {},
         "type": { "type": "string" },
         "label": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "DatePeriod": {
+      "description": "Find period/range. DatePeriod(name, label?, type?). Writes $name_period, $name_poffset, $name_pdate, $name_from, $name_thru for Query args.",
+      "properties": {
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "type": { "type": "string" }
       },
       "required": ["name"]
     },
@@ -134,26 +230,153 @@
         "label": { "type": "string" }
       }
     },
+    "Stat": {
+      "description": "KPI card. Stat(label, value, caption?).",
+      "properties": {
+        "label": { "type": "string" },
+        "value": {},
+        "caption": { "type": "string" }
+      },
+      "required": ["label"]
+    },
+    "Tag": {
+      "description": "Chip. Tag(label, color?, size?). color: primary, positive, negative, warning, info, grey. size: sm or md.",
+      "properties": {
+        "label": { "type": "string" },
+        "color": { "type": "string" },
+        "size": { "type": "string" }
+      },
+      "required": ["label"]
+    },
+    "ListBlock": {
+      "description": "List. ListBlock([ListItem(title, caption?, side?), ...]).",
+      "properties": {
+        "children": { "type": "array" }
+      },
+      "required": ["children"]
+    },
+    "ListItem": {
+      "description": "List row. ListItem(title, caption?, side?). side is often a Link or Tag.",
+      "properties": {
+        "title": { "type": "string" },
+        "caption": { "type": "string" },
+        "side": {}
+      },
+      "required": ["title"]
+    },
+    "Image": {
+      "description": "Same-origin image. Image(src, alt?). src is a path starting with / (not a host URL).",
+      "properties": {
+        "src": { "type": "string" },
+        "alt": { "type": "string" }
+      },
+      "required": ["src"]
+    },
     "Table": {
-      "description": "Data table. Table([Col(label, query.rows.field), ...]).",
+      "description": "Data table. Table([Col(label, query.rows.field), ...]). Col values may be Link/Tag via @Each.",
       "properties": {
         "columns": { "type": "array" }
       },
       "required": ["columns"]
     },
     "Col": {
-      "description": "Table column. Col(label, valuesArray) — pass a plucked query column.",
+      "description": "Table column. Col(label, valuesArray) — pass a plucked query column or @Each of components.",
       "properties": {
         "label": { "type": "string" },
         "values": { "type": "array" }
       },
       "required": ["label"]
     },
-    "Button": {
-      "description": "Button. Button(label, Action([@Run(mutation), @Run(query), @Reset($a)])). Script mode @Run(mutation) POSTs; Agent mode resumes.",
+    "Series": {
+      "description": "Chart series. Series(category, valuesArray).",
+      "properties": {
+        "category": { "type": "string" },
+        "values": { "type": "array" }
+      },
+      "required": ["category", "values"]
+    },
+    "BarChart": {
+      "description": "Vertical bars. BarChart(labels, [Series(name, values)], variant?, xLabel?, yLabel?). variant: grouped or stacked.",
+      "properties": {
+        "labels": { "type": "array" },
+        "series": { "type": "array" },
+        "variant": { "type": "string" },
+        "xLabel": { "type": "string" },
+        "yLabel": { "type": "string" }
+      },
+      "required": ["labels", "series"]
+    },
+    "LineChart": {
+      "description": "Lines over categories. LineChart(labels, [Series(name, values)], variant?, xLabel?, yLabel?). variant: linear, natural, or step.",
+      "properties": {
+        "labels": { "type": "array" },
+        "series": { "type": "array" },
+        "variant": { "type": "string" },
+        "xLabel": { "type": "string" },
+        "yLabel": { "type": "string" }
+      },
+      "required": ["labels", "series"]
+    },
+    "AreaChart": {
+      "description": "Filled lines. AreaChart(labels, [Series(name, values)], variant?, xLabel?, yLabel?).",
+      "properties": {
+        "labels": { "type": "array" },
+        "series": { "type": "array" },
+        "variant": { "type": "string" },
+        "xLabel": { "type": "string" },
+        "yLabel": { "type": "string" }
+      },
+      "required": ["labels", "series"]
+    },
+    "PieChart": {
+      "description": "Pie or donut. PieChart(labels, values, variant?). variant: pie or donut. Values must be numbers (use @Count/@Sum).",
+      "properties": {
+        "labels": { "type": "array" },
+        "values": { "type": "array" },
+        "variant": { "type": "string" }
+      },
+      "required": ["labels", "values"]
+    },
+    "MarkDownRenderer": {
+      "description": "Sanitized markdown (GFM, code highlight, mermaid fences). MarkDownRenderer(textMarkdown, variant?). variant: clear or card. Do not emit HTML.",
+      "properties": {
+        "textMarkdown": { "type": "string" },
+        "variant": { "type": "string" }
+      },
+      "required": ["textMarkdown"]
+    },
+    "Mermaid": {
+      "description": "Mermaid diagram. Mermaid(text, height?). Use for status/flow diagrams. Prefer over embedding mermaid in markdown when it is the whole widget.",
+      "properties": {
+        "text": { "type": "string" },
+        "height": { "type": "string" }
+      },
+      "required": ["text"]
+    },
+    "CodeBlock": {
+      "description": "Highlighted code. CodeBlock(code, language?).",
+      "properties": {
+        "code": { "type": "string" },
+        "language": { "type": "string" }
+      },
+      "required": ["code"]
+    },
+    "Link": {
+      "description": "Same-origin screen link, always new tab. Link(label, path, params?, hash?). path from browse /qapps (not jsonPath, not /rest). params object of find/report fields.",
       "properties": {
         "label": { "type": "string" },
-        "action": {}
+        "path": { "type": "string" },
+        "params": {},
+        "hash": { "type": "string" }
+      },
+      "required": ["label", "path"]
+    },
+    "Button": {
+      "description": "Button. Button(label, Action([@Run(mutation), @Run(query), @Reset($a)]), color?). color: primary (default), secondary, or negative. Script mode @Run(mutation) POSTs; Agent mode resumes.",
+      "properties": {
+        "label": { "type": "string" },
+        "action": {},
+        "color": { "type": "string" }
       },
       "required": ["label"]
     },

@@ -18,9 +18,14 @@
         return out;
     }
     function validateActionPath(path) {
+        if (root.AssistOpenUiNav && typeof root.AssistOpenUiNav.validatePath === 'function')
+            return root.AssistOpenUiNav.validatePath(path);
         if (!path || path.charAt(0) !== '/') return 'path must start with /';
         if (path.indexOf('://') >= 0 || path.indexOf('//') === 0) return 'path must not contain a host';
         if (path.indexOf('..') >= 0) return 'path must not contain ..';
+        var lower = String(path).toLowerCase();
+        if (lower.indexOf('javascript:') >= 0 || lower.indexOf('data:') >= 0)
+            return 'path scheme not allowed';
         return null;
     }
     function isHtmlBody(text, contentType) {
@@ -322,6 +327,11 @@
                     this._lastErrorKey = ek;
                     this.$emit('error', all);
                 }
+            },
+            navGetLinkPath: function() {
+                var r = this.$root;
+                if (r && typeof r.getLinkPath === 'function') return r.getLinkPath.bind(r);
+                return null;
             },
             triggerAction: function(userMessage, formName, action) {
                 var OpenUI = this._OpenUI;

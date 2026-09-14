@@ -701,8 +701,16 @@ module.exports = {
             var type = ev.type;
             if (type === 'open_url') {
                 var url = ev.params && ev.params.url;
-                if (url && url.charAt(0) === '/' && url.indexOf('://') < 0 && url.indexOf('//') !== 0)
-                    window.open(((this.$root && this.$root.appRootPath) || '') + url, '_blank');
+                var Nav = window.AssistOpenUiNav;
+                var built = Nav && Nav.build ? Nav.build(url, null, null, {
+                    appRoot: (this.$root && this.$root.appRootPath) || '',
+                    getLinkPath: this.$root && this.$root.getLinkPath && this.$root.getLinkPath.bind(this.$root),
+                    rewriteShell: true
+                }) : null;
+                if (built && built.href) window.open(built.href, '_blank', 'noopener,noreferrer');
+                else if (!built && url && url.charAt(0) === '/' && url.indexOf('://') < 0 && url.indexOf('//') !== 0
+                        && url.indexOf('..') < 0)
+                    window.open(((this.$root && this.$root.appRootPath) || '') + url, '_blank', 'noopener,noreferrer');
                 return;
             }
             if (type === 'submit' || type === 'continue_conversation') {

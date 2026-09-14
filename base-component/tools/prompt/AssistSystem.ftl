@@ -28,7 +28,7 @@ Find* screens are `form-list` (header-field find + entity-find), not a list tran
 
 - Prefer `kind=openui`: find fields as `Input`/`Lookup` bound to `$name`, rows via `Query("request", {method:"GET", path: jsonPath, query:{...}}, {rows:[]})` and `Table([Col(...)])`.
 - After `submitted:true` this is a **read** — do not `enter_sim`. Agent mode: `request` the same GET with `values` as `query`, then `writeThrough` the table.
-- Do not send the user to a `/qapps/...` URL when JSON rows exist.
+- Keep find **data** on the canvas (`Query` + `Table`). To open the real screen (customer, order, report, detail), emit `Link` with the **screen path** from `browse` (`/qapps/...`), not jsonPath. `Link` always opens a new tab; Assist stays.
 
 ## When submitted is true
 
@@ -71,7 +71,7 @@ Use **only** when the OpenUI library cannot express the layout. Assist is `/qapp
 - `m-date-period` — find-style period/range; needs `:fields="values"` and `name`.
 - `m-container-box` — card section: `title`, `initial-open`.
 
-**Avoid:** `m-form`, `m-form-link`, `m-form-list` (use `q-table` + `fetch`); `m-link`, `router-link`, `m-subscreens-*`, `m-menu-*`, `m-dynamic-container`; `m-script`, `m-stylesheet`; editors/charts unless asked.
+**Avoid:** `m-form`, `m-form-link`, `m-form-list` (use `q-table` + `fetch`); `m-link`, `router-link`, `m-subscreens-*`, `m-menu-*`, `m-dynamic-container`; `m-script`, `m-stylesheet`; CKEditor. Prefer OpenUI `BarChart`/`MarkDownRenderer`/`Link` over vue-sfc charts, markdown, or `m-link`.
 
 `writeThrough` with `kind=vue-sfc`: omit `sfc`/`template`/`script`/`style` to keep the current component; send new source to replace it as a unit.
 
