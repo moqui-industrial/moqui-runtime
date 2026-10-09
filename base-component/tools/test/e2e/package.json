@@ -1,0 +1,16 @@
+{
+  "name": "moqui-assist-acceptance",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Acceptance run of the Assist screen against a real Moqui and a provider of the standard Open Responses protocol (a fake one, or a real one).",
+  "scripts": {
+    "fixture": "node fixture/make-fixture.js",
+    "test:unit": "node --test ../js/AssistStream.test.js",
+    "provider": "node fake-provider.js",
+    "acceptance": "node run-acceptance.js"
+  },
+  "dependencies": {
+    "playwright-core": "1.56.1",
+    "ws": "8.18.3"
+  }
+}

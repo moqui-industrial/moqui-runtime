@@ -80,6 +80,7 @@
         <artifact-execution type="AT_XML_SCREEN" tarpit-enabled="false"/>
         <artifact-execution type="AT_XML_SCREEN_TRANS" tarpit-enabled="false"/>
         <artifact-execution type="AT_SERVICE" tarpit-enabled="false"/>
+        <artifact-execution type="AT_LLM" tarpit-enabled="false"/>
     </artifact-execution-facade>
 
     <screen-facade boundary-comments="true">
@@ -96,6 +97,14 @@
         <profile name="openai-responses" protocol="org.moqui.impl.llm.OpenAiResponsesProtocol"
                 url="" api-key="" model=""
                 timeout-seconds="900"/>
+        <!-- A provider of the standard Open Responses protocol, for the acceptance runs of the Assist screen and for any
+             endpoint that implements the contract: set llm_or_standard_url, llm_or_standard_api_key and llm_or_standard_model
+             outside the repository. Nothing here names a model or a vendor; llm_or_standard_protocol can name
+             the OpenAiResponsesProtocol adapter to run the same screen against OpenAI as a compatibility check, which is not a
+             claim of standard conformance. -->
+        <profile name="openresponses-standard" protocol="${llm_or_standard_protocol ?: 'org.moqui.impl.llm.OpenResponsesProtocol'}"
+                url="${llm_or_standard_url}" api-key="${llm_or_standard_api_key}" model="${llm_or_standard_model}"
+                timeout-seconds="120"/>
         <!-- Hugging Face Inference Providers Responses API: set hf_token (or huggingface_api_key)
              and hf_responses_model outside the repository. Example model: openai/gpt-oss-20b. -->
         <profile name="hf-responses" protocol="org.moqui.impl.llm.OpenResponsesProtocol"

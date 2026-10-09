@@ -226,6 +226,7 @@ task minifyJsDir(type: org.gradlewebtools.minify.JsMinifyTask) {
         file(webrootPath + '/js/qz-tray/MoquiQzComponent.min.js').delete()
         file(webrootPath + '/js/assist/AssistOpenUi.min.js').delete()
         file(webrootPath + '/js/assist/AssistOpenUiLibrary.min.js').delete()
+        file(webrootPath + '/js/assist/AssistStream.min.js').delete()
         // keep committed lang-core.umd.min.js (already minified vendor bundle)
     }
 }
