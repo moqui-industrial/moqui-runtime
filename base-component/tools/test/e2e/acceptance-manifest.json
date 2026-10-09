@@ -1,0 +1,13 @@
+{
+  "fixture": {
+    "file": "fixture/acceptance-image.png",
+    "sha256": "0b01799ee597889531a527f0777a95b84083e779356bb5a4cd6918baea298e2e",
+    "code": "MOQUI-OR-TEST-731",
+    "redCircles": 3,
+    "blueSquares": 2,
+    "note": "These values are what a correct answer says about the picture. They are not in any prompt, file name or metadata the screen sends."
+  },
+  "tool": { "name": "acceptance_sample", "a": 17, "b": 29, "sum": 46, "nonceSetting": "llm_acceptance_nonce" },
+  "memory": { "word": "VIOLETTA-28" },
+  "markers": { "u01": "FINE-U01" }
+}

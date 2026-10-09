@@ -2,14 +2,34 @@
 <div class="assist-root">
     <div class="row items-center q-mb-sm q-col-gutter-sm">
         <div class="col-auto">
+            <q-select id="assist-profile" dense outlined emit-value map-options v-model="profileName" :options="profileOptions"
+                      label="Profile" style="min-width:190px" :disable="streaming" @input="onProfileChange"></q-select>
+        </div>
+        <div v-if="isItemProfile" class="col-auto">
+            <q-select id="assist-transport" dense outlined emit-value map-options v-model="upstreamTransport" :options="transportOptions"
+                      label="To the provider" style="min-width:140px" :disable="streaming"></q-select>
+        </div>
+        <div v-if="isItemProfile" class="col-auto">
+            <q-toggle id="assist-json" dense v-model="structuredJson" label="JSON result" :disable="streaming"></q-toggle>
+        </div>
+        <div v-if="canCompact" class="col-auto">
+            <q-btn id="assist-compact" dense outline no-caps icon="compress" label="Compact" :disable="streaming || !conversationId"
+                   @click="compactConversation"></q-btn>
+        </div>
+        <div v-if="isItemProfile" class="col-auto">
+            <q-btn id="assist-details-toggle" dense outline no-caps icon="info" :label="detailsOpen ? 'Hide details' : 'Details'"
+                   @click="detailsOpen = !detailsOpen"></q-btn>
+        </div>
+        <div v-if="!isItemProfile" class="col-auto">
             <q-btn-toggle dense unelevated v-model="writeMode" :options="writeModeOptions"
                            toggle-color="primary" @input="persistWriteMode" :disable="streaming"></q-btn-toggle>
         </div>
-        <div class="col-auto">
+        <div v-if="!isItemProfile" class="col-auto">
             <q-toggle dense v-model="forceSkillUse" label="Force Skill Use"
                       @input="persistForceSkillUse" :disable="streaming"></q-toggle>
         </div>
-        <div class="col text-caption text-grey-7">{{ writeModeHint }}</div>
+        <div v-if="!isItemProfile" class="col text-caption text-grey-7">{{ writeModeHint }}</div>
+        <div v-else class="col"></div>
         <div v-if="sessionTurns" class="col-auto text-caption text-grey-7">{{ sessionTurns }} turn{{ sessionTurns === 1 ? '' : 's' }} · {{ sessionTokens }} tokens</div>
         <div class="col-auto">
             <q-btn dense outline no-caps :label="chatOnLeft ? 'Chat | Screen' : 'Screen | Chat'"
@@ -27,8 +47,29 @@
             <q-btn dense outline no-caps label="New" @click="newSession"></q-btn>
         </div>
         <div class="col-auto">
-            <q-btn dense outline no-caps color="negative" label="Cancel" :disable="!streaming" @click="cancelTurn"></q-btn>
+            <q-btn id="assist-stop" dense outline no-caps color="negative" label="Cancel" :disable="!streaming" @click="cancelTurn"></q-btn>
         </div>
+    </div>
+    <div v-if="detailsOpen && isItemProfile" id="assist-details" class="q-mb-sm q-pa-sm text-caption" style="border:1px solid #ccc; border-radius:4px">
+        <div v-if="!diag" class="text-grey-7">No turn yet.</div>
+        <div v-else class="row q-col-gutter-sm">
+            <div class="col-auto"><b>profile</b> <span id="assist-diag-profile">{{ diag.profile }}</span></div>
+            <div class="col-auto"><b>to provider</b> <span id="assist-diag-transport">{{ diag.transport }}</span></div>
+            <div class="col-auto"><b>conversation</b> <span id="assist-diag-conversation">{{ diag.conversationId }}</span></div>
+            <div class="col-auto"><b>run</b> <span id="assist-diag-run">{{ diag.runId }}</span></div>
+            <div class="col-auto"><b>request</b> <span id="assist-diag-request">{{ diag.requestId }}</span></div>
+            <div class="col-auto"><b>response</b> <span id="assist-diag-response">{{ diag.responseId }}</span></div>
+            <div class="col-auto"><b>finish</b> <span id="assist-diag-finish">{{ diag.finishReason }}</span></div>
+            <div v-if="diag.usage" class="col-auto"><b>tokens</b> <span id="assist-diag-usage">{{ diag.usage.promptTokens }}/{{ diag.usage.completionTokens }}/{{ diag.usage.totalTokens }}</span></div>
+            <div v-if="diag.timeline" class="col-auto"><b>events</b> <span id="assist-diag-events">{{ diag.timeline.events }}</span>
+                · <b>inferences</b> <span id="assist-diag-inferences">{{ diag.timeline.inferences }}</span>
+                · <b>items</b> <span id="assist-diag-items">{{ diag.timeline.items }}</span>
+                · <b>parts</b> <span id="assist-diag-parts">{{ diag.timeline.parts }}</span></div>
+            <div v-if="diag.structuredOutput" class="col-auto">
+                <q-badge id="assist-json-badge" :color="diag.structuredOutput.valid === true ? 'positive' : diag.structuredOutput.valid === false ? 'negative' : 'grey'"
+                         :label="'JSON ' + diag.structuredOutput.status"></q-badge></div>
+        </div>
+        <div class="q-mt-xs"><q-btn id="assist-export" dense flat no-caps icon="download" label="Export test report" @click="exportReport"></q-btn></div>
     </div>
     <q-tabs v-if="isMobile" v-model="mobileTab" dense class="text-primary">
         <q-tab name="chat" label="Chat"></q-tab>
@@ -48,8 +89,25 @@
             <div ref="chatPane" class="assist-pane assist-chat q-pa-sm column" style="height:100%">
                 <div class="col overflow-auto" style="min-height:0" role="log" aria-live="polite"
                      aria-relevant="additions text" aria-label="Assist conversation">
-                    <div v-for="(m, i) in messages" :key="i" class="q-mb-sm">
+                    <div v-for="(m, i) in messages" :key="i" class="q-mb-sm assist-msg" :data-role="m.role">
                         <div v-if="m.role!=='tool' && m.role!=='done'" class="text-caption text-grey-7">{{ m.role }}<span v-if="m.name"> {{ m.name }}</span></div>
+                        <div v-if="m.attachments && m.attachments.length" class="row q-gutter-xs q-mb-xs assist-msg-attachments">
+                            <template v-for="(a, ai) in m.attachments">
+                                <img v-if="a.kind==='image' && a.url" :key="'a'+ai" :src="a.url" class="assist-msg-img" :alt="a.name || 'image'"
+                                     :data-index="a.index" :data-sha256="a.sha256 || ''" style="max-height:120px; max-width:220px; border:1px solid #ccc">
+                                <span v-else :key="'a'+ai" class="text-caption assist-msg-file">📎 {{ a.name || 'file' }}</span>
+                            </template>
+                        </div>
+                        <div v-if="m.view && detailsOpen" class="assist-timeline text-caption q-mb-xs" :data-inferences="m.view.inferences.length">
+                            <div v-for="inf in m.view.inferences" :key="inf.n" class="assist-inference" :data-inference="inf.n" :data-status="inf.status">
+                                inference {{ inf.n }} · {{ inf.status }}
+                                <div v-for="(it, ii) in inf.items" :key="ii" class="assist-item q-ml-sm" :data-type="it.type" :data-status="it.status">
+                                    {{ it.type }}<span v-if="it.name"> {{ it.name }}</span> · {{ it.status }}
+                                    <span v-for="(pt, pi) in it.parts" :key="pi" class="assist-part q-ml-xs" :data-kind="pt.kind">[{{ pt.kind }} {{ pt.chars }}{{ pt.done ? '✓' : '…' }}]</span>
+                                    <span v-if="it.argumentChars"> [arguments {{ it.argumentChars }}]</span>
+                                </div>
+                            </div>
+                        </div>
                         <div v-if="m.role==='tool'">
                             <div class="text-caption assist-tool-row cursor-pointer" tabindex="0" role="button"
                                  :aria-expanded="m._open ? 'true' : 'false'"
@@ -78,12 +136,23 @@
                     </div>
                 </div>
                 <div class="col-auto q-pt-sm">
+                    <div v-if="attachments.length" id="assist-attachments" class="row q-gutter-xs q-mb-xs items-center">
+                        <div v-for="(a, i) in attachments" :key="a.id" class="assist-attach row items-center no-wrap" :data-name="a.name">
+                            <img v-if="a.kind==='image'" :src="a.dataUrl" height="48" :alt="a.name" style="border:1px solid #ccc">
+                            <span v-else class="text-caption">📎 {{ a.name }}</span>
+                            <q-btn flat dense round icon="close" size="sm" :id="'assist-attach-remove-' + i" :aria-label="'Remove ' + a.name" @click="removeAttachment(i)"></q-btn>
+                        </div>
+                    </div>
+                    <div v-if="attachError" id="assist-attach-error" class="text-negative text-caption q-mb-xs">{{ attachError }}</div>
+                    <input ref="fileInput" id="assist-file" type="file" multiple :accept="acceptFiles" style="display:none" @change="onFiles">
                     <q-input id="assist-composer" outlined autogrow type="textarea" v-model="composer" placeholder="Describe what you need (Shift+Enter for newline)"
                              @keyup.enter.exact.prevent="send" :disable="streaming">
                         <template v-slot:append>
                             <q-btn v-if="speechSupported" flat round dense :icon="recognizing ? 'mic' : 'mic_none'"
                                    @click="toggleMic" :disable="streaming" title="Voice input" aria-label="Voice input"></q-btn>
-                            <q-btn id="assist-send" flat round dense icon="send" :disable="streaming || !composer"
+                            <q-btn v-if="isItemProfile" id="assist-attach" flat round dense icon="attach_file" :disable="streaming"
+                                   @click="pickFile" title="Attach a file" aria-label="Attach a file"></q-btn>
+                            <q-btn id="assist-send" flat round dense icon="send" :disable="streaming || (!composer && !attachments.length)"
                                    @click="send" title="Send" aria-label="Send"></q-btn>
                         </template>
                     </q-input>
@@ -241,7 +310,7 @@
         <div class="col overflow-auto">
             <div v-if="!conversations.length" class="text-grey-7 q-pa-md">No conversations</div>
             <div v-for="row in conversations" :key="row.conversationId"
-                 class="assist-conv-row q-px-sm q-py-xs cursor-pointer"
+                 class="assist-conv-row q-px-sm q-py-xs cursor-pointer" :data-id="row.conversationId"
                  :class="{ 'assist-conv-open': row.conversationId === conversationId }"
                  @click="openConversation(row.conversationId)">
                 <div class="row items-start no-wrap">
@@ -311,25 +380,14 @@
 /* Assist Universal Screen. Canvas kinds: form spec, vue-sfc (httpVueLoader.parse).
  * FUTURE: screen-xml POST to a compile/render transition (server round-trip).
  */
-function parseSseChunk(buffer, onEvent) {
-    var parts = buffer.split('\n\n');
-    var rest = parts.pop();
-    for (var i = 0; i < parts.length; i++) {
-        var block = parts[i];
-        if (!block || !block.trim()) continue;
-        var event = 'message', data = '';
-        var lines = block.split('\n');
-        for (var j = 0; j < lines.length; j++) {
-            var line = lines[j];
-            if (line.indexOf('event:') === 0) event = line.slice(6).trim();
-            else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
-        }
-        var parsed = data;
-        try { parsed = JSON.parse(data); } catch (e) { /* keep string */ }
-        onEvent(event, parsed);
-    }
-    return rest;
-}
+/* SSE framing and the structured turn events live in AssistStream.js (js/assist), loaded with the screen; see
+ * base-component/tools/test/js for their tests. */
+function assistStream() { return (typeof window !== 'undefined' && window.AssistStream) || null; }
+var ACCEPT_FILES = 'image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,application/json';
+var MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+var JSON_RESULT_FORMAT = { type: 'json_schema', name: 'acceptance_result', strict: true,
+    schema: { type: 'object', properties: { code: { type: 'string' }, red_circles: { type: 'integer' }, blue_squares: { type: 'integer' } },
+              required: ['code', 'red_circles', 'blue_squares'], additionalProperties: false } };
 var CONV_STORAGE_KEY = 'assist.conversationId';
 /** No SSE chunk (the server pings while a turn is running) for this long ends the turn. */
 var IDLE_TIMEOUT_MS = 90000;
@@ -343,7 +401,15 @@ function convStatusLabel(status) {
     if (!status) return '';
     return String(status).replace(/^Llmcs/, '');
 }
-function historyToMessages(history) {
+function attachmentsOf(m, base, conversationId) {
+    var list = (m && m.metadata && m.metadata.attachments) || [];
+    return list.map(function(a) {
+        return { kind: a.type === 'input_image' ? 'image' : 'file', name: a.filename || null, index: a.index,
+                 mediaType: a.mediaType || null, sha256: a.sha256 || null, length: a.length != null ? a.length : null,
+                 url: base + '/conversations/' + encodeURIComponent(conversationId) + '/attachments/' + a.index };
+    });
+}
+function historyToMessages(history, base, conversationId) {
     var out = [];
     (history || []).forEach(function(m) {
         if (!m || m.role === 'system' || m.role === 'context') return;
@@ -359,7 +425,10 @@ function historyToMessages(history) {
             });
             return;
         }
-        out.push({ role: m.role, content: m.content || '', name: m.name });
+        var row = { role: m.role, content: m.content || '', name: m.name };
+        var attached = attachmentsOf(m, base, conversationId);
+        if (attached.length) row.attachments = attached;
+        out.push(row);
     });
     return out;
 }
@@ -909,6 +978,8 @@ module.exports = {
             recognition: null, abortCtl: null, idleTimer: null,
             sessionTurns: 0, sessionTokens: 0, lastActionResults: [],
             conversations: [], profileFlags: {}, profilesLoaded: false,
+            profiles: [], profileName: 'assist', upstreamTransport: 'http', structuredJson: false,
+            attachments: [], attachError: '', turnAttachments: [], detailsOpen: false, diag: null, report: [], turnEnded: false, timeline: null,
             convDrawer: false, convSearch: '', convPageIndex: 0, convTotal: 0, convPageSize: 20,
             convSearchTimer: null, splitSaveTimer: null, sourceOpen: false, deleteOpen: false, deleteTarget: null
         };
@@ -969,6 +1040,20 @@ module.exports = {
             if (!this.forceSkillUse) return mode;
             return mode + ' Force Skill Use: select a skill or enter sim before other tools.';
         },
+        profileOptions: function() {
+            return (this.profiles || []).map(function(p) {
+                var item = (p.protocolCapabilities || []).indexOf('item_trajectory') >= 0;
+                return { label: p.name + (item && p.model ? ' (' + p.model + ')' : ''), value: p.name };
+            });
+        },
+        isItemProfile: function() { return (this.profileFlags.protocolCapabilities || []).indexOf('item_trajectory') >= 0; },
+        canCompact: function() { return this.isItemProfile && (this.profileFlags.protocolCapabilities || []).indexOf('compact') >= 0; },
+        transportOptions: function() {
+            var opts = [{ label: 'HTTP', value: 'http' }];
+            if ((this.profileFlags.protocolCapabilities || []).indexOf('websocket') >= 0) opts.push({ label: 'WebSocket', value: 'websocket' });
+            return opts;
+        },
+        acceptFiles: function() { return ACCEPT_FILES; },
         llmBase: function() {
             var root = (this.$root && this.$root.appRootPath) || '';
             return root + '/llm/v1';
@@ -1115,21 +1200,38 @@ module.exports = {
                 .then(function(r) { return r.json(); })
                 .then(function(body) {
                     var list = (body && body.profiles) || [];
-                    var assist = list.filter(function(p) { return p.name === 'assist'; })[0];
-                    vm.profileFlags = assist || {};
+                    vm.profiles = list;
+                    var wanted = null;
+                    try { wanted = new URLSearchParams(window.location.search).get('profile'); } catch (e) { /* ignore */ }
+                    var names = list.map(function(p) { return p.name; });
+                    if (wanted && names.indexOf(wanted) >= 0) vm.profileName = wanted;
+                    else if (names.indexOf(vm.profileName) < 0 && names.length) vm.profileName = names[0];
+                    vm.selectProfile();
                     vm.profilesLoaded = true;
-                    if (assist && assist.allowUnprefixedRequest === false && assist.allowBrowse === false) {
+                    var assist = vm.profileFlags;
+                    if (vm.profileName === 'assist' && assist && assist.allowUnprefixedRequest === false && assist.allowBrowse === false) {
                         var msg = 'Assist profile tools are limited; browse/request may be unavailable.';
                         vm.noteCanvas(msg, 'warning');
                     }
                 }).catch(function() { /* ignore */ });
+        },
+        selectProfile: function() {
+            var name = this.profileName;
+            this.profileFlags = (this.profiles || []).filter(function(p) { return p.name === name; })[0] || {};
+            if (this.transportOptions.map(function(o) { return o.value; }).indexOf(this.upstreamTransport) < 0) this.upstreamTransport = 'http';
+        },
+        /** A thread belongs to one profile: choosing another starts a new one. */
+        onProfileChange: function() {
+            this.selectProfile();
+            this.newSession();
+            this.loadConversations(0);
         },
         loadConversations: function(pageIndex) {
             var vm = this;
             var page = pageIndex == null ? (this.convPageIndex || 0) : pageIndex;
             if (page < 0) page = 0;
             var search = (this.convSearch || '').trim();
-            var url = this.llmBase + '/conversations?profile=assist&purpose=assist&pageIndex=' + page;
+            var url = this.llmBase + '/conversations?profile=' + encodeURIComponent(this.profileName) + '&purpose=assist&pageIndex=' + page;
             if (search) url += '&search=' + encodeURIComponent(search);
             fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
                 .then(function(r) { return r.json(); })
@@ -1186,8 +1288,14 @@ module.exports = {
         },
         restoreConversation: function(body) {
             this.conversationId = body.conversationId;
+            if (body.profileName && body.profileName !== this.profileName && (this.profiles || []).some(function(p) { return p.name === body.profileName; })) {
+                this.profileName = body.profileName;
+                this.selectProfile();
+            }
+            this.turnEnded = true;
+            this.timeline = null;
             try { sessionStorage.setItem(CONV_STORAGE_KEY, body.conversationId); } catch (e) { /* ignore */ }
-            this.messages = historyToMessages(body.history);
+            this.messages = historyToMessages(body.history, this.llmBase, body.conversationId);
             this.pendingToolCalls = body.pendingToolCalls || [];
             this.warnMultiPending();
             this.schema = null;
@@ -1322,13 +1430,91 @@ module.exports = {
         convStatusLabel: function(status) { return convStatusLabel(status); },
         send: function() {
             var text = (this.composer || '').trim();
-            if (!text || this.streaming) return;
+            var attached = this.attachments || [];
+            if ((!text && !attached.length) || this.streaming) return;
             this.composer = '';
-            this.messages.push({ role: 'user', content: text });
+            var row = { role: 'user', content: text };
+            if (attached.length) {
+                row.attachments = attached.map(function(a) { return { kind: a.kind, name: a.name, url: a.dataUrl, mediaType: a.mimeType, length: a.size }; });
+                this.turnAttachments = attached;
+                this.attachments = [];
+                this.attachError = '';
+            }
+            this.messages.push(row);
             if (this.pendingToolCalls.length) this.resumeChat(text);
             else this.chat(text);
         },
+        pickFile: function() { if (this.$refs.fileInput) this.$refs.fileInput.click(); },
+        onFiles: function(ev) {
+            var S = assistStream();
+            var vm = this;
+            var files = (ev && ev.target && ev.target.files) ? Array.prototype.slice.call(ev.target.files) : [];
+            this.attachError = '';
+            files.forEach(function(file) {
+                var problem = S ? S.checkAttachment(file, MAX_ATTACHMENT_BYTES, vm.attachments.length) : 'The attachment helper is not loaded';
+                if (problem) { vm.attachError = file.name + ': ' + problem; return; }
+                var reader = new FileReader();
+                reader.onload = function() {
+                    var url = String(reader.result || '');
+                    var comma = url.indexOf(',');
+                    if (comma < 0) { vm.attachError = file.name + ': could not be read'; return; }
+                    vm.attachments.push({ id: 'a' + Date.now() + '-' + vm.attachments.length, kind: S.attachmentKind(file.type),
+                        name: file.name, mimeType: file.type, size: file.size, data: url.slice(comma + 1),
+                        dataUrl: S.attachmentKind(file.type) === 'image' ? url : null });
+                };
+                reader.onerror = function() { vm.attachError = file.name + ': could not be read'; };
+                reader.readAsDataURL(file);
+            });
+            if (ev && ev.target) ev.target.value = '';
+        },
+        removeAttachment: function(i) { this.attachments.splice(i, 1); this.attachError = ''; },
+        /** What an Open Responses profile gets on top of the body: the structured events, the upstream transport, the options and the attachments of this turn. */
+        turnExtras: function() {
+            var extras = {};
+            if (!this.isItemProfile) { this.turnAttachments = []; return extras; }
+            extras.events = 'v1';
+            if (this.upstreamTransport && this.upstreamTransport !== 'http') extras.upstreamTransport = this.upstreamTransport;
+            if (this.structuredJson) extras.options = { text: { format: JSON_RESULT_FORMAT } };
+            if (this.turnAttachments.length) {
+                extras.attachments = this.turnAttachments.map(function(a) {
+                    var out = { kind: a.kind, mimeType: a.mimeType, data: a.data };
+                    if (a.kind === 'file') out.filename = a.name;
+                    return out;
+                });
+            }
+            this.turnAttachments = [];
+            return extras;
+        },
+        compactConversation: function() {
+            var vm = this;
+            if (!this.conversationId || this.streaming) return;
+            this.streaming = true;
+            fetch(this.llmBase + '/conversations/' + encodeURIComponent(this.conversationId) + '/compact', {
+                method: 'POST', credentials: 'same-origin', headers: this.headers(false), body: '{}' })
+                .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+                .then(function(res) {
+                    vm.streaming = false;
+                    if (!res.ok) { vm.messages.push({ role: 'done', error: true, content: 'Compaction failed: ' + ((res.j && res.j.message) || 'error') }); return; }
+                    vm.messages.push({ role: 'done', content: 'Compacted: ' + res.j.outputItems + ' items kept' });
+                    vm.report.push({ type: 'compact', conversationId: vm.conversationId, outputItems: res.j.outputItems, responseId: res.j.responseId });
+                }).catch(function(err) {
+                    vm.streaming = false;
+                    vm.messages.push({ role: 'done', error: true, content: 'Compaction failed: ' + ((err && err.message) || err) });
+                });
+        },
+        exportReport: function() {
+            var blob = new Blob([JSON.stringify({ generatedAt: new Date().toISOString(), profile: this.profileName, turns: this.report }, null, 2)],
+                { type: 'application/json' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'assist-acceptance-report.json';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+        },
         toolNames: function() {
+            if (this.isItemProfile && !(this.profileFlags || {}).allowWriteUi)
+                return (this.profileFlags || {}).serviceTools || [];
             var names = ['find_skill', 'enter_sim', 'browse', 'find_basic', 'request', 'write_ui', 'run_service', 'pin'];
             // The server only registers tools the profile allows (LlmGateway.applyTools), so this
             // is defence in depth: do not offer a tool that can never arrive. Before /profiles
@@ -1353,7 +1539,7 @@ module.exports = {
             };
         },
         chat: function(text) {
-            var body = Object.assign({ profile: 'assist', purpose: 'assist', canvasId: this.canvasId,
+            var body = Object.assign({ profile: this.profileName, purpose: 'assist', canvasId: this.canvasId,
                 user: text, tools: this.toolNames(), stream: true }, this.chatFlags());
             if (this.conversationId) body.conversationId = this.conversationId;
             this.runSse(this.llmBase + '/chat', body);
@@ -1363,7 +1549,7 @@ module.exports = {
             if (!pending) { this.chat(text); return; }
             var content = this.writeUiResult(false, null);
             content.userMessage = text;
-            var body = Object.assign({ profile: 'assist', tools: this.toolNames(), user: text, stream: true,
+            var body = Object.assign({ profile: this.profileName, tools: this.toolNames(), user: text, stream: true,
                 toolResults: [{ id: pending.id, name: pending.name || 'write_ui', content: content }] },
                 this.chatFlags());
             this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
@@ -1438,7 +1624,7 @@ module.exports = {
             this.messages.push({ role: 'user', content: 'Adjust: ' + feedback });
             if (pending && pending.name === 'write_ui' && this.conversationId) {
                 pack.userMessage = feedback;
-                var body = Object.assign({ profile: 'assist', tools: this.toolNames(), user: feedback, stream: true,
+                var body = Object.assign({ profile: this.profileName, tools: this.toolNames(), user: feedback, stream: true,
                     toolResults: [{ id: pending.id, name: 'write_ui', content: pack }] },
                     this.chatFlags());
                 this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
@@ -1526,7 +1712,7 @@ module.exports = {
             var ver = pageResourceVersion();
             var q = ver ? ('?v=' + ver) : '';
             if (withCanvasRuntime && window.OpenUILang && window.AssistOpenUiReady) return Promise.resolve();
-            var files = [root + '/js/assist/AssistOpenUiLibrary.js' + q];
+            var files = [root + '/js/assist/AssistStream.js' + q, root + '/js/assist/AssistOpenUiLibrary.js' + q];
             if (withCanvasRuntime) files.unshift(root + '/js/assist/lang-core.umd.min.js' + q);
             if (withCanvasRuntime) files.push(root + '/js/assist/AssistOpenUi.js' + q);
             var chain = Promise.resolve();
@@ -1675,7 +1861,7 @@ module.exports = {
                         + ' problems listed; use Adjust or edit the request.', 'warning');
                 }, 0);
             }
-            var body = Object.assign({ profile: 'assist', tools: this.toolNames(), user: feedback, stream: true,
+            var body = Object.assign({ profile: this.profileName, tools: this.toolNames(), user: feedback, stream: true,
                 toolResults: [{ id: pending.id, name: 'write_ui', content: pack }] },
                 this.chatFlags());
             this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
@@ -1855,7 +2041,7 @@ module.exports = {
         confirmTool: function(ok) {
             var pending = this.pendingConfirm();
             if (!pending || !this.conversationId || this.streaming) return;
-            var body = Object.assign({ profile: 'assist', tools: this.toolNames(), stream: true,
+            var body = Object.assign({ profile: this.profileName, tools: this.toolNames(), stream: true,
                 toolResults: [{ id: pending.id, name: pending.name, content: { confirmed: !!ok } }] },
                 this.chatFlags());
             this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
@@ -1868,7 +2054,7 @@ module.exports = {
             }
             var content = this.writeUiResult(true, buttonId);
             content.actionResults = actionResults || [];
-            var body = Object.assign({ profile: 'assist', tools: this.toolNames(), stream: true,
+            var body = Object.assign({ profile: this.profileName, tools: this.toolNames(), stream: true,
                 toolResults: [{ id: pending.id, name: pending.name || 'write_ui', content: content }] },
                 this.chatFlags());
             this.runSse(this.llmBase + '/chat/' + encodeURIComponent(this.conversationId) + '/resume', body);
@@ -1966,13 +2152,30 @@ module.exports = {
         },
         runSse: function(url, body) {
             var vm = this;
+            var S = assistStream();
+            if (!S) {
+                // the stream helper loads with the screen; a turn sent before it arrived waits for it rather than guessing
+                var root = (this.$root && this.$root.appRootPath) || '';
+                var ver = pageResourceVersion();
+                loadScriptOnce(root + '/js/assist/AssistStream.js' + (ver ? ('?v=' + ver) : '')).then(function() {
+                    if (assistStream()) vm.runSse(url, body);
+                    else { vm.streaming = false; vm.noteError('The stream helper could not be loaded'); }
+                }, function(err) { vm.streaming = false; vm.noteError((err && err.message) || 'The stream helper could not be loaded'); });
+                return;
+            }
+            body = Object.assign({}, this.turnExtras(), body);
             // A turn replaces an in-flight open, same as New.
             this.openGen = (this.openGen || 0) + 1;
             this.streaming = true;
+            this.turnEnded = false;
+            this.timeline = (S && body.events === 'v1') ? new S.TurnTimeline() : null;
             this.abortCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
             this.armIdle();
-            var assistant = { role: 'assistant', content: '', pending: true, connected: false };
+            var assistant = { role: 'assistant', content: '', pending: true, connected: false, view: null };
             this.messages.push(assistant);
+            var transport = body.upstreamTransport || 'http';
+            var structured = !!this.timeline;
+            var parser = S ? new S.SseParser() : null;
             fetch(url, {
                 method: 'POST', credentials: 'same-origin',
                 headers: this.headers(true),
@@ -1984,23 +2187,34 @@ module.exports = {
                         throw new Error(err.message || ('HTTP ' + resp.status));
                     });
                 }
-                if (!resp.body || !resp.body.getReader) {
+                if (!resp.body || !resp.body.getReader || !parser) {
                     return resp.json().then(function(j) { vm.handleJsonTurn(j, assistant); });
                 }
                 var reader = resp.body.getReader();
                 var decoder = new TextDecoder('utf-8');
-                var buf = '';
+                function handle(events) {
+                    events.forEach(function(ev) {
+                        var parsed = S.parseData(ev);
+                        if (!parsed.ok) { vm.failTurn(assistant, parsed.error); return; }
+                        vm.onSse(ev.event, parsed.value, assistant, { transport: transport, structured: structured });
+                    });
+                }
                 function pump() {
                     return reader.read().then(function(chunk) {
                         if (chunk.done) {
+                            handle(parser.push(decoder.decode()));
+                            var end = parser.finish();
+                            handle(end.events);
+                            if (end.unfinished) vm.failTurn(assistant, 'The stream ended in the middle of an event');
+                            // a stream that stops without the end the gateway sends is an interruption, never a completed turn
+                            if (!vm.turnEnded && vm.streaming) vm.failTurn(assistant, 'The connection ended before the turn did');
                             vm.streaming = false;
                             vm.clearIdle();
                             vm.loadConversations(vm.convPageIndex || 0);
                             return;
                         }
                         vm.touchSse();
-                        buf += decoder.decode(chunk.value, { stream: true });
-                        buf = parseSseChunk(buf, function(event, data) { vm.onSse(event, data, assistant); });
+                        handle(parser.push(decoder.decode(chunk.value, { stream: true })));
                         return pump();
                     });
                 }
@@ -2014,8 +2228,40 @@ module.exports = {
                 else assistant.content = msg;
             });
         },
-        onSse: function(event, data, assistant) {
+        /** The turn is over and did not end well: say so once, keep what arrived, show no completion. */
+        failTurn: function(assistant, message) {
+            if (this.turnEnded) return;
+            this.turnEnded = true;
+            this.streaming = false;
+            this.clearIdle();
+            if (assistant) assistant.pending = false;
+            if (this.abortCtl) try { this.abortCtl.abort(); } catch (e) { /* ignore */ }
+            this.messages.push({ role: 'done', error: true, content: 'Interrupted: ' + message });
+            this.report.push({ type: 'turn', ok: false, problem: message, profile: this.profileName,
+                conversationId: this.conversationId, timeline: this.timeline ? this.timeline.summary() : null });
+        },
+        recordTurn: function(data, transport) {
+            var tl = this.timeline;
+            var diag = { type: 'turn', ok: !(tl && tl.problem), profile: this.profileName, transport: transport,
+                conversationId: (data && data.conversationId) || this.conversationId, runId: data && data.runId,
+                requestId: data && data.requestId, responseId: data && data.responseId, finishReason: data && data.finishReason,
+                model: data && data.model, usage: data && data.usage, structuredOutput: (data && data.structuredOutput) || null,
+                timeline: tl ? tl.summary() : null, at: new Date().toISOString() };
+            this.diag = diag;
+            this.report.push(diag);
+        },
+        onSse: function(event, data, assistant, mode) {
             this.touchSse();
+            var tl = this.timeline;
+            if (event === 'response_event') {
+                if (tl) {
+                    if (!tl.accept(data)) { this.failTurn(assistant, tl.problem); return; }
+                    assistant.content = tl.text();
+                    assistant.view = tl.view();
+                    assistant.connected = true;
+                }
+                return;
+            }
             if (event === 'conversation' && data && data.conversationId) {
                 var first = !this.conversationId;
                 this.conversationId = data.conversationId;
@@ -2024,7 +2270,8 @@ module.exports = {
             } else if (event === 'llm') {
                 assistant.connected = true;
             } else if (event === 'delta' && data && data.content) {
-                assistant.content = (assistant.content || '') + data.content;
+                // with the structured events the text comes from them only, so it is never added twice
+                if (!tl) assistant.content = (assistant.content || '') + data.content;
             } else if (event === 'write_ui_delta') {
                 this.applyOpenUiDelta(data && data.arguments);
             } else if (event === 'tool_call') {
@@ -2034,6 +2281,9 @@ module.exports = {
                 this.messages.push({ role: 'tool', kind: 'result', name: data && data.name,
                     content: data && data.content, summary: data && data.summary });
             } else if (event === 'yield') {
+                if (tl) tl.applyTerminal('yield', data);
+                this.turnEnded = true;
+                assistant.pending = false;
                 this.pendingToolCalls = (data && data.pendingToolCalls) || [];
                 this.warnMultiPending();
                 var call = this.pendingToolCalls[0];
@@ -2045,16 +2295,25 @@ module.exports = {
                 this.clearIdle();
                 this.loadConversations(this.convPageIndex || 0);
             } else if (event === 'done') {
+                if (tl) tl.applyTerminal('done', data);
+                this.turnEnded = true;
+                assistant.pending = false;
                 this.streaming = false;
                 this.clearIdle();
                 if (data && !data.yielded) this.pendingToolCalls = [];
                 this.recordDoneStats(data);
+                this.recordTurn(data, mode && mode.transport);
                 var doneLine = formatDoneLine(data);
                 if (doneLine) this.messages.push({ role: 'done', content: doneLine });
                 this.loadConversations(this.convPageIndex || 0);
             } else if (event === 'error') {
+                if (tl) tl.applyTerminal('error', data);
+                this.turnEnded = true;
+                assistant.pending = false;
                 this.streaming = false;
                 this.clearIdle();
+                this.report.push({ type: 'turn', ok: false, problem: (data && data.message) || 'LLM error', profile: this.profileName,
+                    conversationId: this.conversationId, timeline: tl ? tl.summary() : null });
                 this.noteError((data && data.message) || 'LLM error');
             }
         },
@@ -2088,6 +2347,11 @@ module.exports = {
                 data: { moquiSessionToken: this.csrf, conversationId: this.conversationId, title: title } });
         },
         clearLocalSession: function() {
+            this.attachments = [];
+            this.turnAttachments = [];
+            this.attachError = '';
+            this.diag = null;
+            this.timeline = null;
             this.conversationId = null;
             try { sessionStorage.removeItem(CONV_STORAGE_KEY); } catch (e) { /* ignore */ }
             this.canvasId = 'c' + Date.now();

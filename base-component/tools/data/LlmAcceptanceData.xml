@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+This software is in the public domain under CC0 1.0 Universal plus a
+Grant of Patent License.
+
+To the extent possible under law, the author(s) have dedicated all
+copyright and related and neighboring rights to this software to the
+public domain worldwide. This software is distributed without any
+warranty.
+
+You should have received a copy of the CC0 Public Domain Dedication
+along with this software (see the LICENSE.md file). If not, see
+<http://creativecommons.org/publicdomain/zero/1.0/>.
+-->
+<!-- Loaded only on request (gradle load -Ptypes=llm-acceptance): a second user, who is not an administrator, for the
+     acceptance run of the Assist screen, which shows that a conversation is not readable by anyone but its owner. -->
+<entity-facade-xml type="llm-acceptance">
+    <!-- password=moqui, same hash as the demo users -->
+    <moqui.security.UserAccount userId="LLM_ACCEPT_2" username="acceptance.second" userFullName="Acceptance Second User"
+            currentPassword="16ac58bbfa332c1c55bd98b53e60720bfa90d394" passwordHashType="SHA"
+            passwordHint="framework name, lowercase" currencyUomId="USD" locale="en_US" timeZone="UTC"
+            emailAddress="acceptance.second@example.invalid"/>
+    <moqui.security.UserGroup userGroupId="LLM_ACCEPTANCE" description="Acceptance run: may use the LLM gateway and the Assist screen, nothing else"/>
+    <moqui.security.UserGroupMember userGroupId="LLM_ACCEPTANCE" userId="LLM_ACCEPT_2" fromDate="0"/>
+    <moqui.security.UserGroupPermission userGroupId="LLM_ACCEPTANCE" userPermissionId="LlmGateway" fromDate="0"/>
+    <moqui.security.ArtifactAuthz artifactAuthzId="ASSIST_APP_ACCEPTANCE" userGroupId="LLM_ACCEPTANCE" artifactGroupId="ASSIST_APP"
+            authzTypeEnumId="AUTHZT_ALWAYS" authzActionEnumId="AUTHZA_ALL"/>
+    <moqui.security.ArtifactAuthz artifactAuthzId="LLM_PROFILES_ACCEPTANCE" userGroupId="LLM_ACCEPTANCE" artifactGroupId="LlmProfiles"
+            authzTypeEnumId="AUTHZT_ALWAYS" authzActionEnumId="AUTHZA_ALL"/>
+    <!-- The service of the acceptance run, which the gateway can offer as a tool only to people who may see it as a service -->
+    <moqui.security.ArtifactGroup artifactGroupId="LLM_ACCEPTANCE_SERVICES" description="Services of the acceptance run of the Assist screen"/>
+    <moqui.security.ArtifactGroupMember artifactGroupId="LLM_ACCEPTANCE_SERVICES" artifactName="org.moqui.impl.LlmAcceptanceServices.get#Sample"
+            artifactTypeEnumId="AT_SERVICE" inheritAuthz="N"/>
+    <moqui.security.ArtifactAuthz artifactAuthzId="LLM_ACCEPT_SVC_ADMIN" userGroupId="ADMIN" artifactGroupId="LLM_ACCEPTANCE_SERVICES"
+            authzTypeEnumId="AUTHZT_ALWAYS" authzActionEnumId="AUTHZA_ALL"/>
+    <moqui.security.ArtifactAuthz artifactAuthzId="LLM_ACCEPT_SVC_SECOND" userGroupId="LLM_ACCEPTANCE" artifactGroupId="LLM_ACCEPTANCE_SERVICES"
+            authzTypeEnumId="AUTHZT_ALWAYS" authzActionEnumId="AUTHZA_ALL"/>
+</entity-facade-xml>

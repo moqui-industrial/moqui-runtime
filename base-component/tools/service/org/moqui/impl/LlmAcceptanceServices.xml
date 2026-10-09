@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+This software is in the public domain under CC0 1.0 Universal plus a
+Grant of Patent License.
+
+To the extent possible under law, the author(s) have dedicated all
+copyright and related and neighboring rights to this software to the
+public domain worldwide. This software is distributed without any
+warranty.
+
+You should have received a copy of the CC0 Public Domain Dedication
+along with this software (see the LICENSE.md file). If not, see
+<http://creativecommons.org/publicdomain/zero/1.0/>.
+-->
+<!-- allow-remote is what makes a service usable as a tool of the gateway; this one is read-only and answers constants and a setting.
+     For the acceptance run of the Assist screen (base-component/tools/test/e2e). The gateway offers it to a turn only when the
+     administrator lists it in llm_gateway_service_tools, for example
+     acceptance_sample=org.moqui.impl.LlmAcceptanceServices.get#Sample ; without that setting nothing calls it. -->
+<services xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://moqui.org/xsd/service-definition-3.xsd">
+    <service verb="get" noun="Sample" authenticate="true" allow-remote="true" transaction="ignore">
+        <description>Read-only. Answers two numbers and a nonce that is in no prompt: the nonce is the setting llm_acceptance_nonce,
+            chosen by whoever starts the acceptance run, so a run can show that a tool result really came back to the model.</description>
+        <in-parameters><parameter name="sampleId" required="true"/></in-parameters>
+        <out-parameters><parameter name="sampleId"/><parameter name="a" type="Integer"/><parameter name="b" type="Integer"/><parameter name="nonce"/></out-parameters>
+        <actions><script><![CDATA[
+            a = 17
+            b = 29
+            nonce = org.moqui.util.SystemBinding.getPropOrEnv('llm_acceptance_nonce') ?: 'NO-NONCE-SET'
+        ]]></script></actions>
+    </service>
+</services>
