@@ -95,7 +95,7 @@
         <profile name="default" timeout-seconds="900"/>
         <!-- Opt-in Responses API profile: set llm_openai_api_key and llm_openai_model outside the repository. -->
         <profile name="openai-responses" protocol="org.moqui.impl.llm.OpenAiResponsesProtocol"
-                url="" api-key="" model=""
+                url="${llm_openai_url}" api-key="${llm_openai_api_key}" model="${llm_openai_model}"
                 timeout-seconds="900"/>
         <!-- A provider of the standard Open Responses protocol, for the acceptance runs of the Assist screen and for any
              endpoint that implements the contract: set llm_or_standard_url, llm_or_standard_api_key and llm_or_standard_model
