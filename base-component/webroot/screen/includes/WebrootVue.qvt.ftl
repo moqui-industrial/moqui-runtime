@@ -92,6 +92,10 @@ along with this software (see the LICENSE.md file). If not, see
             <#-- nav plugins -->
             <template v-for="navPlugin in navPlugins"><component :is="navPlugin"></component></template>
 
+            <q-btn dense flat icon="smart_toy" @click="openAgentChat()">
+                <q-tooltip>Agent</q-tooltip>
+            </q-btn>
+
             <#-- notify history -->
             <q-btn dense flat icon="notifications">
                 <q-tooltip>${ec.l10n.localize("Notify History")}</q-tooltip>
@@ -163,6 +167,25 @@ along with this software (see the LICENSE.md file). If not, see
         <q-drawer v-model="leftOpen" side="left" bordered><#-- no 'overlay', for those who want to keep it open better to compress main area -->
             <q-btn dense flat icon="menu" @click="toggleLeftOpen()" class="lt-sm"></q-btn>
             <q-list dense padding><m-menu-nav-item :menu-index="0"></m-menu-nav-item></q-list>
+        </q-drawer>
+
+        <q-drawer v-model="rightPanelOpen" side="right" overlay bordered :width="rightPanelWidth">
+            <div class="column no-wrap" style="height:100%">
+                <div style="position:absolute; top:0; bottom:0; left:0; width:6px; cursor:col-resize; z-index:1"
+                     @mousedown.prevent="startRightPanelResize"></div>
+                <div class="row items-center q-px-sm q-py-xs">
+                    <div class="col text-subtitle1">{{ rightPanelTitle }}</div>
+                    <q-btn flat round dense icon="close" @click="closeRightPanel()">
+                        <q-tooltip>Close</q-tooltip>
+                    </q-btn>
+                </div>
+                <q-separator></q-separator>
+                <div class="col" style="min-height:0">
+                    <iframe v-if="rightPanelUrl" id="right-panel-frame" :src="rightPanelUrl" :title="rightPanelTitle"
+                            style="width:100%; height:100%; border:0; display:block"
+                            allow="clipboard-read; clipboard-write; microphone; camera"></iframe>
+                </div>
+            </div>
         </q-drawer>
 
         <q-page-container class="q-ma-sm"><q-page>

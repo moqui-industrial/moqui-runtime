@@ -2143,7 +2143,8 @@ moqui.webrootVue = new Vue({
         lastNavTime:Date.now(), loading:0, currentLoadRequest:null, activeContainers:{}, urlListeners:[],
         moquiSessionToken:"", appHost:"", appRootPath:"", userId:"", username:"", locale:"en",
         reLoginShow:false, reLoginPassword:null, reLoginMfaData:null, reLoginOtp:null,
-        notificationClient:null, sessionTokenBc:null, qzVue:null, leftOpen:false, moqui:moqui },
+        notificationClient:null, sessionTokenBc:null, qzVue:null, leftOpen:false,
+        rightPanelOpen:false, rightPanelUrl:null, rightPanelTitle:"", rightPanelWidth:640, rightPanelMinWidth:360, moqui:moqui },
     methods: {
         setUrl: function(url, bodyParameters, onComplete, pushState=true) {
             // cancel current load if needed
@@ -2304,6 +2305,36 @@ moqui.webrootVue = new Vue({
             this.leftOpen = !this.leftOpen;
             $.ajax({ type:'POST', url:(this.appRootPath + '/apps/setPreference'), error:moqui.handleAjaxError,
                 data:{ moquiSessionToken:this.moquiSessionToken, preferenceKey:'QUASAR_LEFT_OPEN', preferenceValue:(this.leftOpen ? 'true' : 'false') } });
+        },
+        openRightPanel: function(panelUrl, panelTitle) {
+            this.rightPanelUrl = panelUrl;
+            this.rightPanelTitle = panelTitle || "";
+            this.rightPanelOpen = true;
+        },
+        openAgentChat: function() {
+            this.openRightPanel("http://localhost:3081/", "Agent Chat");
+        },
+        startRightPanelResize: function(event) {
+            var app = this;
+            var resize = function(moveEvent) {
+                var maxWidth = Math.max(app.rightPanelMinWidth, Math.min(1200, window.innerWidth - 200));
+                var newWidth = window.innerWidth - moveEvent.clientX;
+                app.rightPanelWidth = Math.max(app.rightPanelMinWidth, Math.min(maxWidth, newWidth));
+            };
+            var stop = function() {
+                document.removeEventListener("mousemove", resize);
+                document.removeEventListener("mouseup", stop);
+                document.body.style.cursor = "";
+                document.body.style.userSelect = "";
+            };
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+            document.addEventListener("mousemove", resize);
+            document.addEventListener("mouseup", stop);
+            resize(event);
+        },
+        closeRightPanel: function() {
+            this.rightPanelOpen = false;
         },
         stopProp: function (e) { e.stopPropagation(); },
         getNavHref: function(navIndex) {
