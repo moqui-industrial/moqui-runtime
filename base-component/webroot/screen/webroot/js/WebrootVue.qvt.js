@@ -2144,7 +2144,8 @@ moqui.webrootVue = new Vue({
         moquiSessionToken:"", appHost:"", appRootPath:"", userId:"", username:"", locale:"en",
         reLoginShow:false, reLoginPassword:null, reLoginMfaData:null, reLoginOtp:null,
         notificationClient:null, sessionTokenBc:null, qzVue:null, leftOpen:false,
-        rightPanelOpen:false, rightPanelUrl:null, rightPanelTitle:"", rightPanelWidth:640, rightPanelMinWidth:360, moqui:moqui },
+        rightPanelOpen:false, rightPanelUrl:null, rightPanelTitle:"", rightPanelWidth:640, rightPanelMinWidth:360,
+        rightPanelResizing:false, moqui:moqui },
     methods: {
         setUrl: function(url, bodyParameters, onComplete, pushState=true) {
             // cancel current load if needed
@@ -2316,6 +2317,7 @@ moqui.webrootVue = new Vue({
         },
         startRightPanelResize: function(event) {
             var app = this;
+            app.rightPanelResizing = true;
             var resize = function(moveEvent) {
                 var maxWidth = Math.max(app.rightPanelMinWidth, Math.min(1200, window.innerWidth - 200));
                 var newWidth = window.innerWidth - moveEvent.clientX;
@@ -2326,6 +2328,7 @@ moqui.webrootVue = new Vue({
                 document.removeEventListener("mouseup", stop);
                 document.body.style.cursor = "";
                 document.body.style.userSelect = "";
+                app.rightPanelResizing = false;
             };
             document.body.style.cursor = "col-resize";
             document.body.style.userSelect = "none";

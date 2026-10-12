@@ -171,8 +171,9 @@ along with this software (see the LICENSE.md file). If not, see
 
         <q-drawer v-model="rightPanelOpen" side="right" overlay bordered :width="rightPanelWidth">
             <div class="column no-wrap" style="height:100%">
-                <div style="position:absolute; top:0; bottom:0; left:0; width:6px; cursor:col-resize; z-index:1"
-                     @mousedown.prevent="startRightPanelResize"></div>
+                <div v-if="rightPanelResizing" style="position:absolute; inset:0; cursor:col-resize; z-index:2"></div>
+                <div style="position:absolute; top:0; bottom:0; left:-3px; width:12px; cursor:col-resize; z-index:3"
+                     @mousedown.stop.prevent="startRightPanelResize"></div>
                 <div class="row items-center q-px-sm q-py-xs">
                     <div class="col text-subtitle1">{{ rightPanelTitle }}</div>
                     <q-btn flat round dense icon="close" @click="closeRightPanel()">
