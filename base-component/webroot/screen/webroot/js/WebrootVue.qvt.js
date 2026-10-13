@@ -2299,6 +2299,7 @@ moqui.webrootVue = new Vue({
         },
         switchDarkLight: function() {
             this.$q.dark.toggle();
+            this.sendThemeToRightPanel();
             $.ajax({ type:'POST', url:(this.appRootPath + '/apps/setPreference'), error:moqui.handleAjaxError,
                 data:{ moquiSessionToken:this.moquiSessionToken, preferenceKey:'QUASAR_DARK', preferenceValue:(this.$q.dark.isActive ? 'true' : 'false') } });
         },
@@ -2306,6 +2307,16 @@ moqui.webrootVue = new Vue({
             this.leftOpen = !this.leftOpen;
             $.ajax({ type:'POST', url:(this.appRootPath + '/apps/setPreference'), error:moqui.handleAjaxError,
                 data:{ moquiSessionToken:this.moquiSessionToken, preferenceKey:'QUASAR_LEFT_OPEN', preferenceValue:(this.leftOpen ? 'true' : 'false') } });
+        },
+        // The page in the side panel (LibreChat) follows the dark/light switch of this page: it gets the theme as a message, to the
+        // origin of its own URL, and sends nothing back that is used here
+        sendThemeToRightPanel: function() {
+            var frame = document.getElementById("right-panel-frame");
+            if (!frame || !frame.contentWindow || !this.rightPanelUrl) return;
+            try {
+                var origin = new URL(this.rightPanelUrl, window.location.href).origin;
+                frame.contentWindow.postMessage({ type:"moqui-theme", dark:this.$q.dark.isActive }, origin);
+            } catch (e) { /* a panel that is not a page of another origin has nothing to follow */ }
         },
         openRightPanel: function(panelUrl, panelTitle) {
             this.rightPanelUrl = panelUrl;

@@ -174,7 +174,7 @@ along with this software (see the LICENSE.md file). If not, see
                 <div v-if="rightPanelResizing" style="position:absolute; inset:0; cursor:col-resize; z-index:2"></div>
                 <div style="position:absolute; top:0; bottom:0; left:-3px; width:12px; cursor:col-resize; z-index:3"
                      @mousedown.stop.prevent="startRightPanelResize"></div>
-                <div class="row items-center q-px-sm q-py-xs">
+                <div class="row items-center q-px-sm q-py-xs right-panel-header ${headerClass}">
                     <div class="col text-subtitle1">{{ rightPanelTitle }}</div>
                     <q-btn flat round dense icon="close" @click="closeRightPanel()">
                         <q-tooltip>Close</q-tooltip>
@@ -182,7 +182,7 @@ along with this software (see the LICENSE.md file). If not, see
                 </div>
                 <q-separator></q-separator>
                 <div class="col" style="min-height:0">
-                    <iframe v-if="rightPanelUrl" id="right-panel-frame" :src="rightPanelUrl" :title="rightPanelTitle"
+                    <iframe v-if="rightPanelUrl" id="right-panel-frame" :src="rightPanelUrl" :title="rightPanelTitle" @load="sendThemeToRightPanel()"
                             style="width:100%; height:100%; border:0; display:block"
                             allow="clipboard-read; clipboard-write; microphone; camera"></iframe>
                 </div>
