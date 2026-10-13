@@ -2136,6 +2136,9 @@ Vue.component('m-menu-item-content', {
 });
 
 
+// The window of the sign-in of the side panel: kept out of the data of the app, because a reactive getter on a window of another
+// origin throws
+var rightPanelLoginPopup = null;
 moqui.webrootVue = new Vue({
     el: '#apps-root',
     data: { basePath:"", linkBasePath:"", currentPathList:[], extraPathList:[], currentParameters:{}, bodyParameters:null,
@@ -2144,7 +2147,7 @@ moqui.webrootVue = new Vue({
         moquiSessionToken:"", appHost:"", appRootPath:"", userId:"", username:"", locale:"en",
         reLoginShow:false, reLoginPassword:null, reLoginMfaData:null, reLoginOtp:null,
         notificationClient:null, sessionTokenBc:null, qzVue:null, leftOpen:false,
-        rightPanelOpen:false, rightPanelUrl:null, rightPanelTitle:"", rightPanelWidth:640, rightPanelMinWidth:360,
+        rightPanelOpen:false, rightPanelUrl:null, rightPanelLoginUrl:null, rightPanelTitle:"", rightPanelWidth:640, rightPanelMinWidth:360,
         rightPanelResizing:false, moqui:moqui },
     methods: {
         setUrl: function(url, bodyParameters, onComplete, pushState=true) {
@@ -2324,7 +2327,40 @@ moqui.webrootVue = new Vue({
             this.rightPanelOpen = true;
         },
         openAgentChat: function() {
-            this.openRightPanel("http://localhost:3081/", "Agent Chat");
+            // the login page without the automatic redirect to the identity provider: when a sign-in is needed the page tells this
+            // one (see onRightPanelMessage), and when there is a session it goes on to the chat by itself
+            this.rightPanelLoginUrl = null;
+            this.openRightPanel("http://localhost:3081/login?redirect=false", "Agent Chat");
+        },
+        rightPanelOrigin: function() {
+            try { return new URL(this.rightPanelUrl, window.location.href).origin; } catch (e) { return null; }
+        },
+        onRightPanelMessage: function(event) {
+            var panelOrigin = this.rightPanelOrigin();
+            if (!panelOrigin || event.origin !== panelOrigin || !event.data) return;
+            if (event.data.type === "librechat-login-required") {
+                var loginUrl = String(event.data.loginUrl || "");
+                if (loginUrl.indexOf(panelOrigin + "/") === 0) this.rightPanelLoginUrl = loginUrl;
+            } else if (event.data.type === "librechat-logged-in") {
+                this.finishRightPanelLogin();
+            }
+        },
+        openRightPanelLogin: function() {
+            var app = this;
+            if (!app.rightPanelLoginUrl) return;
+            rightPanelLoginPopup = window.open(app.rightPanelLoginUrl, "librechat-login", "popup=yes,width=520,height=720");
+            // when the window is closed (by the page itself, or by the person) the panel is loaded again
+            var watcher = setInterval(function() {
+                if (!rightPanelLoginPopup || rightPanelLoginPopup.closed) { clearInterval(watcher); app.finishRightPanelLogin(); }
+            }, 600);
+        },
+        finishRightPanelLogin: function() {
+            var panelOrigin = this.rightPanelOrigin();
+            try { if (rightPanelLoginPopup && !rightPanelLoginPopup.closed) rightPanelLoginPopup.close(); } catch (e) { }
+            rightPanelLoginPopup = null;
+            if (!this.rightPanelLoginUrl) return;
+            this.rightPanelLoginUrl = null;
+            if (panelOrigin) { this.rightPanelUrl = null; var app = this; this.$nextTick(function() { app.rightPanelUrl = panelOrigin + "/"; }); }
         },
         startRightPanelResize: function(event) {
             var app = this;
@@ -2349,6 +2385,7 @@ moqui.webrootVue = new Vue({
         },
         closeRightPanel: function() {
             this.rightPanelOpen = false;
+            this.rightPanelLoginUrl = null;
         },
         stopProp: function (e) { e.stopPropagation(); },
         getNavHref: function(navIndex) {
@@ -2588,6 +2625,7 @@ moqui.webrootVue = new Vue({
         }
     },
     created: function() {
+        window.addEventListener("message", this.onRightPanelMessage);
         this.moquiSessionToken = $("#confMoquiSessionToken").val();
         this.appHost = $("#confAppHost").val(); this.appRootPath = $("#confAppRootPath").val();
         this.basePath = $("#confBasePath").val(); this.linkBasePath = $("#confLinkBasePath").val();

@@ -181,10 +181,17 @@ along with this software (see the LICENSE.md file). If not, see
                     </q-btn>
                 </div>
                 <q-separator></q-separator>
-                <div class="col" style="min-height:0">
+                <div class="col" style="min-height:0; position:relative">
                     <iframe v-if="rightPanelUrl" id="right-panel-frame" :src="rightPanelUrl" :title="rightPanelTitle" @load="sendThemeToRightPanel()"
                             style="width:100%; height:100%; border:0; display:block"
                             allow="clipboard-read; clipboard-write; microphone; camera"></iframe>
+                    <#-- the page in the panel says when it needs a sign-in that a frame cannot do (the identity provider will not run in a frame
+                         when third-party cookies are blocked): the sign-in is done in a window of its own, then the panel is reloaded -->
+                    <div v-if="rightPanelLoginUrl" class="absolute-full flex flex-center column q-pa-lg text-center"
+                         style="background:rgba(0,0,0,0.88); z-index:4">
+                        <div class="text-white q-mb-md">Sign in to use the chat as {{ username }}</div>
+                        <q-btn color="primary" label="Sign in" @click="openRightPanelLogin()"></q-btn>
+                    </div>
                 </div>
             </div>
         </q-drawer>
