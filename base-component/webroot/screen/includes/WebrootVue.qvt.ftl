@@ -100,6 +100,10 @@ along with this software (see the LICENSE.md file). If not, see
             <#-- nav plugins -->
             <template v-for="navPlugin in navPlugins"><component :is="navPlugin"></component></template>
 
+            <q-btn dense flat icon="smart_toy" @click="openAgentChat()">
+                <q-tooltip>Agent</q-tooltip>
+            </q-btn>
+
             <#-- notify history -->
             <q-btn dense flat icon="notifications">
                 <q-tooltip>${ec.l10n.localize("Notify History")}</q-tooltip>
@@ -167,6 +171,33 @@ along with this software (see the LICENSE.md file). If not, see
                 </q-card></q-menu>
             </q-btn>
         </q-toolbar></q-header>
+
+        <q-drawer v-model="rightPanelOpen" side="right" overlay bordered :width="rightPanelWidth">
+            <div class="column no-wrap" style="height:100%">
+                <div v-if="rightPanelResizing" style="position:absolute; inset:0; cursor:col-resize; z-index:2"></div>
+                <div style="position:absolute; top:0; bottom:0; left:-3px; width:12px; cursor:col-resize; z-index:3"
+                     @mousedown.stop.prevent="startRightPanelResize"></div>
+                <div class="row items-center q-px-sm q-py-xs right-panel-header ${headerClass}">
+                    <div class="col text-subtitle1">{{ rightPanelTitle }}</div>
+                    <q-btn flat round dense icon="close" @click="closeRightPanel()">
+                        <q-tooltip>Close</q-tooltip>
+                    </q-btn>
+                </div>
+                <q-separator></q-separator>
+                <div class="col" style="min-height:0; position:relative">
+                    <iframe v-if="rightPanelUrl" id="right-panel-frame" :src="rightPanelUrl" :title="rightPanelTitle" @load="sendThemeToRightPanel()"
+                            style="width:100%; height:100%; border:0; display:block"
+                            allow="clipboard-read; clipboard-write; microphone; camera"></iframe>
+                    <#-- the page in the panel says when it needs a sign-in that a frame cannot do (the identity provider will not run in a frame
+                         when third-party cookies are blocked): the sign-in is done in a window of its own, then the panel is reloaded -->
+                    <div v-if="rightPanelLoginUrl" class="absolute-full flex flex-center column q-pa-lg text-center"
+                         style="background:rgba(0,0,0,0.88); z-index:4">
+                        <div class="text-white q-mb-md">Sign in to use the chat as {{ username }}</div>
+                        <q-btn color="primary" label="Sign in" @click="openRightPanelLogin()"></q-btn>
+                    </div>
+                </div>
+            </div>
+        </q-drawer>
 
         <q-page-container>
             <#-- Under the header: Assist, then the menu, then the page. The menu is not a q-drawer, so it cannot sit left of Assist. -->

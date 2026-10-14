@@ -2193,6 +2193,9 @@ Vue.component('m-menu-item-content', {
 });
 
 
+// The window of the sign-in of the side panel: kept out of the data of the app, because a reactive getter on a window of another
+// origin throws
+var rightPanelLoginPopup = null;
 moqui.webrootVue = new Vue({
     el: '#apps-root',
     data: { basePath:"", linkBasePath:"", currentPathList:[], extraPathList:[], currentParameters:{}, bodyParameters:null,
@@ -2202,7 +2205,9 @@ moqui.webrootVue = new Vue({
         reLoginShow:false, reLoginPassword:null, reLoginMfaData:null, reLoginOtp:null,
         notificationClient:null, sessionTokenBc:null, qzVue:null, leftOpen:false, moqui:moqui,
         assistEnabled:false, assistComp:null, assistOpen:false, assistSide:'left', assistNarrow:false, menuOverlay:false,
-        assistCanvasOn:false, assistPanelPx:420, assistNavSilent:false },
+        assistCanvasOn:false, assistPanelPx:420, assistNavSilent:false,
+        rightPanelOpen:false, rightPanelUrl:null, rightPanelLoginUrl:null, rightPanelTitle:"", rightPanelWidth:640, rightPanelMinWidth:360,
+        rightPanelResizing:false },
     methods: {
         setUrl: function(url, bodyParameters, onComplete, pushState=true) {
             // cancel current load if needed
@@ -2361,8 +2366,85 @@ moqui.webrootVue = new Vue({
             while (histList.length > 25) { histList.pop(); }
             this.notifyHistoryList = histList;
         },
+        // The page in the side panel (LibreChat) follows the dark/light switch of this page: it gets the theme as a message, to the
+        // origin of its own URL, and sends nothing back that is used here
+        sendThemeToRightPanel: function() {
+            var frame = document.getElementById("right-panel-frame");
+            if (!frame || !frame.contentWindow || !this.rightPanelUrl) return;
+            try {
+                var origin = new URL(this.rightPanelUrl, window.location.href).origin;
+                frame.contentWindow.postMessage({ type:"moqui-theme", dark:this.$q.dark.isActive }, origin);
+            } catch (e) { /* a panel that is not a page of another origin has nothing to follow */ }
+        },
+        openRightPanel: function(panelUrl, panelTitle) {
+            this.rightPanelUrl = panelUrl;
+            this.rightPanelTitle = panelTitle || "";
+            this.rightPanelOpen = true;
+        },
+        openAgentChat: function() {
+            // the login page without the automatic redirect to the identity provider: when a sign-in is needed the page tells this
+            // one (see onRightPanelMessage), and when there is a session it goes on to the chat by itself
+            this.rightPanelLoginUrl = null;
+            this.openRightPanel("http://localhost:3081/login?redirect=false", "Agent Chat");
+        },
+        rightPanelOrigin: function() {
+            try { return new URL(this.rightPanelUrl, window.location.href).origin; } catch (e) { return null; }
+        },
+        onRightPanelMessage: function(event) {
+            var panelOrigin = this.rightPanelOrigin();
+            if (!panelOrigin || event.origin !== panelOrigin || !event.data) return;
+            if (event.data.type === "librechat-login-required") {
+                var loginUrl = String(event.data.loginUrl || "");
+                if (loginUrl.indexOf(panelOrigin + "/") === 0) this.rightPanelLoginUrl = loginUrl;
+            } else if (event.data.type === "librechat-logged-in") {
+                this.finishRightPanelLogin();
+            }
+        },
+        openRightPanelLogin: function() {
+            var app = this;
+            if (!app.rightPanelLoginUrl) return;
+            rightPanelLoginPopup = window.open(app.rightPanelLoginUrl, "librechat-login", "popup=yes,width=520,height=720");
+            // when the window is closed (by the page itself, or by the person) the panel is loaded again
+            var watcher = setInterval(function() {
+                if (!rightPanelLoginPopup || rightPanelLoginPopup.closed) { clearInterval(watcher); app.finishRightPanelLogin(); }
+            }, 600);
+        },
+        finishRightPanelLogin: function() {
+            var panelOrigin = this.rightPanelOrigin();
+            try { if (rightPanelLoginPopup && !rightPanelLoginPopup.closed) rightPanelLoginPopup.close(); } catch (e) { }
+            rightPanelLoginPopup = null;
+            if (!this.rightPanelLoginUrl) return;
+            this.rightPanelLoginUrl = null;
+            if (panelOrigin) { this.rightPanelUrl = null; var app = this; this.$nextTick(function() { app.rightPanelUrl = panelOrigin + "/"; }); }
+        },
+        startRightPanelResize: function(event) {
+            var app = this;
+            app.rightPanelResizing = true;
+            var resize = function(moveEvent) {
+                var maxWidth = Math.max(app.rightPanelMinWidth, Math.min(1200, window.innerWidth - 200));
+                var newWidth = window.innerWidth - moveEvent.clientX;
+                app.rightPanelWidth = Math.max(app.rightPanelMinWidth, Math.min(maxWidth, newWidth));
+            };
+            var stop = function() {
+                document.removeEventListener("mousemove", resize);
+                document.removeEventListener("mouseup", stop);
+                document.body.style.cursor = "";
+                document.body.style.userSelect = "";
+                app.rightPanelResizing = false;
+            };
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+            document.addEventListener("mousemove", resize);
+            document.addEventListener("mouseup", stop);
+            resize(event);
+        },
+        closeRightPanel: function() {
+            this.rightPanelOpen = false;
+            this.rightPanelLoginUrl = null;
+        },
         switchDarkLight: function() {
             this.$q.dark.toggle();
+            this.sendThemeToRightPanel();
             $.ajax({ type:'POST', url:(this.appRootPath + '/apps/setPreference'), error:moqui.handleAjaxError,
                 data:{ moquiSessionToken:this.moquiSessionToken, preferenceKey:'QUASAR_DARK', preferenceValue:(this.$q.dark.isActive ? 'true' : 'false') } });
         },
@@ -2671,6 +2753,7 @@ moqui.webrootVue = new Vue({
         }
     },
     created: function() {
+        window.addEventListener("message", this.onRightPanelMessage);
         this.moquiSessionToken = $("#confMoquiSessionToken").val();
         this.appHost = $("#confAppHost").val(); this.appRootPath = $("#confAppRootPath").val();
         this.basePath = $("#confBasePath").val(); this.linkBasePath = $("#confLinkBasePath").val();
