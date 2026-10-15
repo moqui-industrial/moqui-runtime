@@ -2787,6 +2787,11 @@ moqui.webrootVue = new Vue({
         this.setUrl(window.location.pathname + window.location.search);
         // init the NotificationClient and register 'displayNotify' as the default listener
         this.notificationClient.registerListener("ALL");
+        // screen_use navigate from the Moqui MCP server (the chat in the right panel): open that screen here
+        this.notificationClient.registerListener("LlmScreenNavigate", function(jsonObj) {
+            var target = jsonObj && jsonObj.message ? jsonObj.message.url : null;
+            if (target && target.indexOf('/qapps') === 0) moqui.webrootVue.setUrl(target);
+        });
         this.syncAssistNarrow();
         var vmAssist = this;
         this._assistResizeListener = function() { vmAssist.syncAssistNarrow(); };
