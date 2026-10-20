@@ -91,7 +91,7 @@ Action steps, inside `Action([...])`:
 - `@Set($var, value)` — set a $variable. `@Reset($var, ...)` — restore declared defaults
 - Do not use `@OpenUrl`. Use Link for same-origin /qapps paths.
 Buttons(children: any[]) — Row of buttons.
-Link(label: string, path: string, params?: any, hash?: string) — Same-origin screen link, always a new tab. path from browse /qapps (not jsonPath, not /rest). params object of find/report fields.
+Link(label: string, path: string, params?: any, hash?: string) — Same-origin screen link in this window. path from browse under /qapps (not jsonPath, not /rest). params object of find/report fields.
 
 ## Built-in Functions
 
@@ -241,12 +241,12 @@ Use these with Query() for read operations or Mutation() for write operations. T
 
 ## Navigation (Link)
 
-Use Link to open real screens the user can VIEW (from browse) in a new tab. Assist stays open.
+Use Link to open real screens the user can VIEW (from browse) in this window. Assist stays open.
 
 - path: screen path from browse under /qapps, e.g. /qapps/popc/Order/FindOrder. Never jsonPath, never /.../actions/..., never /rest/s1.
 - params: object of find/report field names from browse detail. Values may be $variables or row fields.
 - hash: optional fragment without #.
-- Always new tab. Do not use m-link, router-link, or $root.setUrl.
+- Same window. Do not use m-link, router-link, or window.open.
 - In tables: Col("Open", @Each(data.rows, "r", Link("View", "/qapps/.../EditX", {idField: r.idField})))
 
 Data vs navigation: Query+Table for in-canvas rows (jsonPath on /apps). Link for "open this customer/order/report" (/qapps screen path). Checklist: Query = jsonPath on /apps (with /actions/...); Link = /qapps screen path (no /actions, no jsonPath, no /rest). Mixing them returns HTML instead of JSON.
@@ -274,11 +274,11 @@ $q = ""
 data = Query("request", {method:"GET", path:"/apps/example/FindThing/actions/ListThings", query:{name:$q, pageSize:"50"}}, {rows:[]})
 root = Stack([CardHeader("Find"), Form("find", Button("Search", Action([@Run(data)])), [FormControl("Name", Input("q", $q))]), Table([Col("Name", data.rows.name), Col("Open", @Each(data.rows, "r", Link("View", "/qapps/example/EditThing", {thingId: r.thingId})))])])
 
-Open orders (do not prefix the Query or the counts with $; a link column such as orderId is the id plus orderId_display for the link text):
-orders = Query("request", {method:"GET", path:"/apps/marble/Order/FindOrder/actions/OrderList", query:{orderType:"Sales", partStatusId:"OrderPlaced,OrderApproved", partStatusId_op:"in", pageSize:"200"}}, {rows:[]})
-placed = @Count(@Filter(orders.rows, "partStatusId", "==", "OrderPlaced"))
-approved = @Count(@Filter(orders.rows, "partStatusId", "==", "OrderApproved"))
-root = Stack([CardHeader("Open Sales Orders"), Stack([Stat("Open orders", @Count(orders.rows)), Stat("Placed", placed), Stat("Approved", approved), Stat("Total", @Round(@Sum(orders.rows.partTotal), 2))], "row"), Table([Col("Order", orders.rows.orderId), Col("Status", orders.rows.partStatusId), Col("Total", orders.rows.partTotal)])])
+Service hit summary (do not prefix the Query or the counts with $; a link column is the id plus a <field>_display field for the link text):
+hits = Query("request", {method:"GET", path:"/apps/system/ArtifactHitSummary/actions/ArtifactHitSummaryList", query:{artifactType:"AT_SERVICE", pageSize:"200"}}, {rows:[]})
+scriptHits = @Count(@Filter(hits.rows, "artifactSubType", "==", "script"))
+inlineHits = @Count(@Filter(hits.rows, "artifactSubType", "==", "inline"))
+root = Stack([CardHeader("Service hits"), Stack([Stat("Services", @Count(hits.rows)), Stat("Script", scriptHits), Stat("Inline", inlineHits), Stat("Total hits", @Sum(hits.rows.hitCount))], "row"), Table([Col("Service", hits.rows.artifactName), Col("Type", hits.rows.artifactSubType), Col("Hits", hits.rows.hitCount)])])
 
 Chart from a form-list (jsonShape {rows,totalCount}; findFields option keys exactly; pageSize not limit):
 $artifactType = "AT_SERVICE"
@@ -327,7 +327,7 @@ Before finishing, walk your output and verify:
 
 - Bind inputs as Input("fieldName", $fieldName). Declare $fieldName = default first.
 - Lookup(name, $name, optionsUrl) for server-search dropdowns. optionsUrl from browse, not invented, not /qapps.
-- Link(label, /qapps/... path from browse, {params}). Always new tab. Not jsonPath, not m-link.
+- Link(label, /qapps/... path from browse, {params}). Same window. Not jsonPath, not m-link.
 - Charts: BarChart/LineChart/AreaChart(labels, [Series(...)]) or PieChart(labels, numericValues). Use Query + @Count/@Filter; do not hardcode series.
 - Markdown via MarkDownRenderer; diagrams via Mermaid or fenced ```mermaid. Do not emit HTML.
 - Do not emit HTML or Vue/JS. Do not use m-form, m-link, or router-link.
